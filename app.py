@@ -97,13 +97,13 @@ page = st.sidebar.radio("Go to:", [
 ])
 
 # ---------------------------------------------------------
-# PAGE 1: PLAYER PROFILES (100% TOUCH CARD BUTTONS, NO INPUT BARS)
+# PAGE 1: PLAYER PROFILES (WITH BATTLE POWER VISIBLE)
 # ---------------------------------------------------------
 if page == "Player Profiles":
     st.header("👤 Player Profile & Attendance History")
-    st.markdown("Tap any rank button below to list members, then tap a member to view their profile.")
+    st.markdown("Tap any rank button below to list members with their Battle Power, then tap a member to view their profile.")
     
-    # Touch Pills for Rank Selection (Never summons keyboard!)
+    # Touch Pills for Rank Selection
     rank_cols = st.columns(5)
     ranks = ["Leader/Deputy", "Officer", "Elite", "Member A-M", "Member N-Z"]
     
@@ -121,23 +121,27 @@ if page == "Player Profiles":
     # Filter members based on selected Touch Pill
     active_tab = st.session_state.active_rank_tab
     if active_tab == "Leader":
-        filtered_members = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"].isin(["Alliance Leader", "Deputy"])]["Player Name"].tolist()
+        filtered_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"].isin(["Alliance Leader", "Deputy"])]
     elif active_tab == "Officer":
-        filtered_members = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Officer"]["Player Name"].tolist()
+        filtered_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Officer"]
     elif active_tab == "Elite":
-        filtered_members = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Elite"]["Player Name"].tolist()
+        filtered_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Elite"]
     elif active_tab == "Member_AM":
-        all_members = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Member"]["Player Name"].tolist()
-        filtered_members = [m for m in all_members if m[0].upper() <= 'M' or not m[0].isalpha()]
+        all_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Member"]
+        filtered_df = all_df[all_df["Player Name"].apply(lambda x: x[0].upper() <= 'M' or not x[0].isalpha())]
     else:
-        all_members = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Member"]["Player Name"].tolist()
-        filtered_members = [m for m in all_members if m[0].upper() > 'M' and m[0].isalpha()]
+        all_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Member"]
+        filtered_df = all_df[all_df["Player Name"].apply(lambda x: x[0].upper() > 'M' and x[0].isalpha())]
 
-    # Render Member Selection Cards
+    # Render Member Selection Cards with Battle Power displayed on the button
     st.markdown("#### Select Player Card:")
     grid_cols = st.columns(2)
-    for idx, p_name in enumerate(filtered_members):
-        if grid_cols[idx % 2].button(f"👤 {p_name}", key=f"card_{p_name}", use_container_width=True):
+    for idx, row in filtered_df.reset_index().iterrows():
+        p_name = row["Player Name"]
+        p_bp = row["Battle Power"]
+        bp_label = f"{p_bp / 1_000_000:.1f}M" if p_bp > 0 else "0"
+        
+        if grid_cols[idx % 2].button(f"👤 {p_name}\n⚔️ {bp_label} BP", key=f"card_{p_name}", use_container_width=True):
             st.session_state.selected_player_name = p_name
 
     selected_player = st.session_state.selected_player_name
@@ -152,12 +156,13 @@ if page == "Player Profiles":
     attended_count = all_events_count - missed_count
     attendance_pct = (attended_count / all_events_count) * 100.0 if all_events_count > 0 else 100.0
     
-    # Read-Only Metrics
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Alliance Rank", player_row["Alliance Rank"])
-    c2.metric("Events Attended", f"{attended_count} / {all_events_count}")
-    c3.metric("Attendance Rate", f"{attendance_pct:.1f}%")
-    c4.metric("Member Status", player_row["Status"])
+    # Read-Only Metrics (Including Battle Power prominently!)
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Rank", player_row["Alliance Rank"])
+    c2.metric("Battle Power", f"{player_row['Battle Power']:,}")
+    c3.metric("Attended", f"{attended_count} / {all_events_count}")
+    c4.metric("Rate", f"{attendance_pct:.1f}%")
+    c5.metric("Status", player_row["Status"])
     
     st.subheader("📋 Missed Events Log")
     if player_misses:
@@ -178,6 +183,7 @@ if page == "Player Profiles":
 # ---------------------------------------------------------
 elif page == "Master Roster & Status":
     st.header("👥 RIP Master Roster (98 Members)")
+    st.markdown("Includes rank, current battle power, and activity status.")
     st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
