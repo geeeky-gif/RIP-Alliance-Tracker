@@ -5,20 +5,72 @@ import pytesseract
 
 st.set_page_config(page_title="RIP Alliance Attendance Tracker", layout="wide")
 
-# Custom CSS to make the sidebar narrower for landscape mode
+# ---------------------------------------------------------
+# CUSTOM WAR & ORDER / RIP ALLIANCE THEME CSS
+# ---------------------------------------------------------
 st.markdown(
     """
     <style>
+        /* Narrower sidebar for landscape mobile mode */
         [data-testid="stSidebar"] {
             min-width: 200px;
             max-width: 240px;
+            background-color: #121418;
+        }
+        
+        /* Main page background dark war theme */
+        .stApp {
+            background-color: #0e1117;
+            color: #e0e0e0;
+        }
+        
+        /* Custom header banner styling */
+        .rip-header {
+            background: linear-gradient(90deg, #1a1c23 0%, #2c2f38 50%, #1a1c23 100%);
+            border: 2px solid #ffd700;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+            margin-bottom: 20px;
+        }
+        .rip-header h1 {
+            color: #ffd700;
+            font-family: 'Cinzel', serif, sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin: 0;
+            font-size: 24px;
+        }
+        .rip-header p {
+            color: #a0a0a0;
+            margin: 5px 0 0 0;
+            font-size: 14px;
+        }
+        
+        /* Style metric containers like war plaques */
+        [data-testid="stMetric"] {
+            background-color: #161a22;
+            border: 1px solid #333842;
+            padding: 10px;
+            border-radius: 6px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+        }
+        [data-testid="stMetricLabel"] {
+            color: #b0b8c4 !important;
+        }
+        [data-testid="stMetricValue"] {
+            color: #ffd700 !important;
         }
     </style>
+    
+    <div class="rip-header">
+        <h1>🛡️ RIP Alliance Command Center</h1>
+        <p>Raiders in Pajamas • Automated Event & Battle Power Tracking</p>
+    </div>
     """,
     unsafe_allow_html=True
 )
-
-st.title("🛡️ RIP Alliance Attendance Tracker")
 
 # ---------------------------------------------------------
 # 1. INITIALIZE MASTER ROSTER DATA WITH EXACT BATTLE POWERS
@@ -115,7 +167,7 @@ if 'attendance_records' not in st.session_state:
 # ---------------------------------------------------------
 # 3. NAVIGATION SIDEBAR
 # ---------------------------------------------------------
-st.sidebar.markdown("### 📌 Navigation")
+st.sidebar.markdown("### 📌 Command Menu")
 page = st.sidebar.radio("Go to:", [
     "Player Profiles", 
     "Alliance Overview & Stats", 
@@ -127,8 +179,8 @@ page = st.sidebar.radio("Go to:", [
 # PAGE 1: PLAYER PROFILES
 # ---------------------------------------------------------
 if page == "Player Profiles":
-    st.header("👤 Player Profile & Attendance History")
-    st.markdown("Tap any rank button below to list members, then tap a member to view their profile.")
+    st.subheader("👤 Alliance Member Profiles")
+    st.markdown("Select a rank filter below, then tap a member card to view their attendance record and Battle Power growth.")
     
     # Touch Pills for Rank Selection
     rank_cols = st.columns(5)
@@ -167,12 +219,12 @@ if page == "Player Profiles":
         p_bp = row["Battle Power"]
         bp_label = f"{p_bp / 1_000_000:.1f}M" if p_bp > 0 else "0"
         
-        if grid_cols[idx % 2].button(f"👤 {p_name}\n⚔️ {bp_label} BP", key=f"card_{p_name}", use_container_width=True):
+        if grid_cols[idx % 2].button(f"🛡️ {p_name}\n⚔️ {bp_label} BP", key=f"card_{p_name}", use_container_width=True):
             st.session_state.selected_player_name = p_name
 
     selected_player = st.session_state.selected_player_name
     st.markdown("---")
-    st.markdown(f"## 📊 Selected Profile: **{selected_player}**")
+    st.markdown(f"### ⚔️ Active Profile: **{selected_player}**")
     
     player_row = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == selected_player].iloc[0]
     
@@ -209,7 +261,7 @@ if page == "Player Profiles":
 # PAGE 2: ALLIANCE OVERVIEW & STATS (READ-ONLY)
 # ---------------------------------------------------------
 elif page == "Alliance Overview & Stats":
-    st.header("📊 Alliance Participation Overview")
+    st.subheader("📊 Alliance Participation Overview")
     
     c1, c2, c3 = st.columns(3)
     c1.metric("Total Roster Members", len(st.session_state.roster_df))
@@ -225,12 +277,11 @@ elif page == "Alliance Overview & Stats":
 # PAGE 3: UPLOAD SCREENSHOTS (PASSWORD PROTECTED)
 # ---------------------------------------------------------
 elif page == "Upload Event Screenshots":
-    st.header("📸 Screenshot Attendance Uploader")
+    st.subheader("📸 Screenshot Attendance Uploader")
     
-    # Simple shared password protection
     passcode = st.text_input("Enter Leadership Passcode to Unlock Uploader:", type="password")
     
-    if passcode == "rip123":  # You can change this shared password to whatever you like!
+    if passcode == "rip123":
         st.success("Passcode accepted!")
         
         col1, col2 = st.columns(2)
@@ -277,12 +328,11 @@ elif page == "Upload Event Screenshots":
 # PAGE 4: ADMIN / ROSTER EDITS (PASSWORD PROTECTED)
 # ---------------------------------------------------------
 elif page == "Admin / Roster Edits":
-    st.header("⚙️ Admin & Roster Edits")
+    st.subheader("⚙️ Admin & Roster Edits")
     
-    # Simple shared password protection
     passcode = st.text_input("Enter Leadership Passcode to Unlock Admin Tools:", type="password", key="admin_pass")
     
-    if passcode == "rip123":  # Same shared password
+    if passcode == "rip123":
         st.success("Passcode accepted!")
         
         with st.form("roster_update_form"):
