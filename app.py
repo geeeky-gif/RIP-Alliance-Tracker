@@ -8,7 +8,7 @@ st.set_page_config(page_title="RIP Alliance Attendance Tracker", layout="wide")
 st.title("🛡️ RIP Alliance Attendance Tracker")
 
 # ---------------------------------------------------------
-# 1. INITIALIZE MASTER ROSTER DATA
+# 1. INITIALIZE MASTER ROSTER DATA WITH EXACT BATTLE POWERS
 # ---------------------------------------------------------
 if 'roster_df' not in st.session_state:
     st.session_state.roster_df = pd.DataFrame({
@@ -43,7 +43,22 @@ if 'roster_df' not in st.session_state:
             "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member",
             "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member"
         ],
-        "Battle Power": [114868760] + [20000000] * 97,
+        "Battle Power": [
+            114868760, 19755892, 46233787, 73798788, 27125931, 33185471, 14412624,
+            41320177, 30311814, 27592265, 53629229, 14484362, 29558050, 64213255, 12870792,
+            24504174, 32362970, 13481429, 20718008, 41983374, 14223374, 29167177,
+            13214323, 28068481, 17422525, 32072931, 22049897, 17153913, 22959795, 13353616,
+            16340322, 17826745, 16798028, 0, 17597305, 20851556, 23351759,
+            22416721, 16595288, 16987720, 18864239, 25294936, 17687980, 20048433,
+            16493289, 21199760, 26577988, 15101687, 17835737, 20452615, 11007546, 10329042,
+            20292626, 13949713, 22701921, 22615040, 10044142, 28685097, 16881537,
+            17039949, 12238796, 12710750, 8655503, 12561949, 0, 29729176, 11624664,
+            20266930, 9329853, 10820403, 17063715, 46720961, 20773665, 0,
+            9351327, 17047386, 13851926, 18706825, 12153728, 21693287, 22976112,
+            13134740, 11073114, 6968217, 12849922, 8767112, 9780074, 16478082,
+            16008706, 18590299, 15498491, 20010237, 18409578, 22880798, 16406189, 29270139,
+            12223807, 18231946
+        ],
         "Status": ["Active"] * 98
     })
 
@@ -51,7 +66,7 @@ if 'selected_player_name' not in st.session_state:
     st.session_state.selected_player_name = "•~SoulTaker~•"
 
 if 'active_rank_tab' not in st.session_state:
-    st.session_state.active_rank_tab = "Alliance Leader"
+    st.session_state.active_rank_tab = "Leader"
 
 # ---------------------------------------------------------
 # 2. INITIALIZE PRE-LOGGED OCTOBER EVENTS
@@ -97,15 +112,14 @@ page = st.sidebar.radio("Go to:", [
 ])
 
 # ---------------------------------------------------------
-# PAGE 1: PLAYER PROFILES (WITH BATTLE POWER VISIBLE)
+# PAGE 1: PLAYER PROFILES
 # ---------------------------------------------------------
 if page == "Player Profiles":
     st.header("👤 Player Profile & Attendance History")
-    st.markdown("Tap any rank button below to list members with their Battle Power, then tap a member to view their profile.")
+    st.markdown("Tap any rank button below to list members with their correct Battle Power, then tap a member to view their profile.")
     
     # Touch Pills for Rank Selection
     rank_cols = st.columns(5)
-    ranks = ["Leader/Deputy", "Officer", "Elite", "Member A-M", "Member N-Z"]
     
     if rank_cols[0].button("👑 Leaders", use_container_width=True):
         st.session_state.active_rank_tab = "Leader"
@@ -133,7 +147,7 @@ if page == "Player Profiles":
         all_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Member"]
         filtered_df = all_df[all_df["Player Name"].apply(lambda x: x[0].upper() > 'M' and x[0].isalpha())]
 
-    # Render Member Selection Cards with Battle Power displayed on the button
+    # Render Member Selection Cards with individual Battle Power
     st.markdown("#### Select Player Card:")
     grid_cols = st.columns(2)
     for idx, row in filtered_df.reset_index().iterrows():
@@ -156,7 +170,7 @@ if page == "Player Profiles":
     attended_count = all_events_count - missed_count
     attendance_pct = (attended_count / all_events_count) * 100.0 if all_events_count > 0 else 100.0
     
-    # Read-Only Metrics (Including Battle Power prominently!)
+    # Read-Only Metrics with exact individual Battle Power
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Rank", player_row["Alliance Rank"])
     c2.metric("Battle Power", f"{player_row['Battle Power']:,}")
@@ -172,9 +186,10 @@ if page == "Player Profiles":
         st.success("🌟 Perfect Attendance! Entered all 7 tracked October events.")
         
     st.subheader("📈 Battle Power Trend")
+    bp_val = player_row["Battle Power"]
     bp_data = pd.DataFrame({
         "Date": ["2026-10-01", "2026-10-08", "2026-10-15", "2026-10-18"],
-        "Battle Power": [player_row["Battle Power"] * 0.96, player_row["Battle Power"] * 0.98, player_row["Battle Power"] * 0.99, player_row["Battle Power"]]
+        "Battle Power": [bp_val * 0.96, bp_val * 0.98, bp_val * 0.99, bp_val]
     })
     st.line_chart(bp_data.set_index("Date"))
 
@@ -183,7 +198,7 @@ if page == "Player Profiles":
 # ---------------------------------------------------------
 elif page == "Master Roster & Status":
     st.header("👥 RIP Master Roster (98 Members)")
-    st.markdown("Includes rank, current battle power, and activity status.")
+    st.markdown("Includes rank, correct individual battle power, and activity status.")
     st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
