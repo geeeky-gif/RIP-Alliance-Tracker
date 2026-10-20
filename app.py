@@ -3,6 +3,7 @@ import pandas as pd
 from PIL import Image
 import pytesseract
 from difflib import SequenceMatcher
+import re
 
 st.set_page_config(page_title="RIP Alliance Attendance Tracker", layout="wide")
 
@@ -69,7 +70,7 @@ st.markdown(
 )
 
 # ---------------------------------------------------------
-# FUZZY MATCHING HELPER FUNCTION
+# FUZZY MATCHING & OCR PARSER HELPERS
 # ---------------------------------------------------------
 def clean_text(text):
     return "".join(c for c in text if c.isalnum()).lower()
@@ -96,8 +97,103 @@ def find_best_roster_match(ocr_chunk, roster_names, cutoff=0.70):
         return best_match, highest_score
     return None, 0.0
 
+def extract_number(text):
+    """Extracts the first valid integer from a string, ignoring commas/symbols"""
+    nums = re.findall(r'\d[\d,]*', text)
+    if nums:
+        return int(nums[0].replace(',', ''))
+    return 0
+
+def parse_player_info_screenshot(ocr_text, roster_names):
+    """
+    Parses a 'Player Info' screenshot based on the exact layout:
+    - Player name near the top
+    - Castle level near 'lv.'
+    - Lord Level near 'lv.'
+    - Individual Reputation
+    - Military Rank
+    - Power Ranking
+    - Battle power
+    - Kills and Losses
+    """
+    lines = [line.strip() for line in ocr_text.split('\n') if line.strip()]
+    parsed_data = {
+        "Player Name": None,
+        "Castle Level": 0,
+        "Lord Level": 0,
+        "Individual Reputation": 0,
+        "Military Rank": "",
+        "Power Ranking": 0,
+        "Battle Power": 0,
+        "Kills": 0,
+        "Losses": 0
+    }
+    
+    # 1. Identify player name (check top lines against roster using fuzzy match)
+    for line in lines[:6]:
+        match, score = find_best_roster_match(line, roster_names, cutoff=0.65)
+        if match:
+            parsed_data["Player Name"] = match
+            break
+            
+    # If name wasn't found in top lines, scan entire text
+    if not parsed_data["Player Name"]:
+        for line in lines:
+            match, score = find_best_roster_match(line, roster_names, cutoff=0.75)
+            if match:
+                parsed_data["Player Name"] = match
+                break
+
+    # 2. Parse stats line by line or keyword search
+    for i, line in enumerate(lines):
+        line_lower = line.lower()
+        
+        # Castle Level or Lord Level with "lv."
+        if "lv." in line_lower:
+            num = extract_number(line)
+            if num > 0:
+                if parsed_data["Castle Level"] == 0 and "lord" not in line_lower:
+                    parsed_data["Castle Level"] = num
+                elif "lord" in line_lower or parsed_data["Castle Level"] > 0:
+                    parsed_data["Lord Level"] = num
+
+        # Individual Reputation
+        if "reputation" in line_lower or "individual" in line_lower:
+            parsed_data["Individual Reputation"] = extract_number(line)
+            # If number is on the next line
+            if parsed_data["Individual Reputation"] == 0 and i + 1 < len(lines):
+                parsed_data["Individual Reputation"] = extract_number(lines[i+1])
+
+        # Military Rank
+        if "military rank" in line_lower or ("rank" in line_lower and "power" not in line_lower):
+            parts = line.split(":")
+            if len(parts) > 1:
+                parsed_data["Military Rank"] = parts[1].strip()
+            elif i + 1 < len(lines):
+                parsed_data["Military Rank"] = lines[i+1].strip()
+
+        # Power Ranking
+        if "power ranking" in line_lower:
+            parsed_data["Power Ranking"] = extract_number(line)
+            if parsed_data["Power Ranking"] == 0 and i + 1 < len(lines):
+                parsed_data["Power Ranking"] = extract_number(lines[i+1])
+
+        # Battle Power
+        if "battle power" in line_lower or line_lower == "power":
+            parsed_data["Battle Power"] = extract_number(line)
+            if parsed_data["Battle Power"] == 0 and i + 1 < len(lines):
+                parsed_data["Battle Power"] = extract_number(lines[i+1])
+
+        # Kills and Losses
+        if "kills" in line_lower:
+            parsed_data["Kills"] = extract_number(line)
+        if "losses" in line_lower:
+            parsed_data["Losses"] = extract_number(line)
+
+    return parsed_data
+
 # ---------------------------------------------------------
-# 1. MASTER ROSTER INITIALIZATION (RESTORED BATTLE POWERS)
+# 1. MASTER ROSTER INITIALIZATION
 # ---------------------------------------------------------
 if 'roster_df' not in st.session_state:
     st.session_state.roster_df = pd.DataFrame({
@@ -325,7 +421,7 @@ elif page == "Alliance Overview & Stats":
         st.dataframe(pd.DataFrame(st.session_state.attendance_records), use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# PAGE 3: UPLOAD SCREENSHOTS (FUZZY MATCHING ENABLED)
+# PAGE 3: UPLOAD SCREENSHOTS (PARSER ENABLED)
 # ---------------------------------------------------------
 elif page == "Upload Event Screenshots":
     st.subheader("📸 Bulk Screenshot Uploader")
@@ -347,7 +443,7 @@ elif page == "Upload Event Screenshots":
             entry_mode = st.radio("Logging Mode:", ["Log Non-Attendants ('Not Entered')", "Log Attendants ('Battlers')"], horizontal=True)
         else:
             scan_date = st.date_input("Stat Scan Date")
-            st.markdown("💡 *Tip: You can select up to **20 screenshots at once**. Fuzzy matching will automatically resolve font and symbol variances against your roster.*")
+            st.markdown("💡 *Tip: You can select up to **20 screenshots at once**. The OCR parser will read Castle Level, Lord Level, Reputation, Military Rank, BP, Kills, and Losses automatically.*")
 
         uploaded_files = st.file_uploader("Choose screenshot(s)... (Max 20 files)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         
@@ -361,33 +457,62 @@ elif page == "Upload Event Screenshots":
                         img = Image.open(file)
                         st.image(img, use_column_width=True)
                         
-                if st.button("Process Batch Screenshots with Fuzzy Match"):
-                    with st.spinner("Running OCR and Fuzzy Name Matching..."):
+                if st.button("Process Batch Screenshots"):
+                    with st.spinner("Running OCR Parser across screenshots..."):
                         roster_names = st.session_state.roster_df["Player Name"].tolist()
-                        matched_members = set()
+                        success_count = 0
                         
                         for file in uploaded_files:
                             img = Image.open(file)
                             text = pytesseract.image_to_string(img)
-                            lines = text.split('\n')
-                            for line in lines:
-                                best_match, score = find_best_roster_match(line, roster_names, cutoff=0.75)
-                                if best_match:
-                                    matched_members.add(best_match)
-                        
-                        if "Attendance" in upload_type:
-                            for name in matched_members:
-                                st.session_state.attendance_records.append({
-                                    "Event": selected_event,
-                                    "Date": str(event_date),
-                                    "Player": name,
-                                    "Status": "Not Entered" if "Non-Attendants" in entry_mode else "Entered"
-                                })
-                            st.success(f"Successfully matched and logged {len(matched_members)} attendance entries across {len(uploaded_files)} screenshot(s)!")
-                        else:
-                            st.success(f"Processed {len(uploaded_files)} screenshots! Successfully fuzzy-matched {len(matched_members)} unique alliance members.")
-                            if matched_members:
-                                st.write("**Matched Members Found:**", list(matched_members))
+                            
+                            if "Attendance" in upload_type:
+                                # Attendance matching
+                                for name in roster_names:
+                                    if name in text:
+                                        st.session_state.attendance_records.append({
+                                            "Event": selected_event,
+                                            "Date": str(event_date),
+                                            "Player": name,
+                                            "Status": "Not Entered" if "Non-Attendants" in entry_mode else "Entered"
+                                        })
+                                        success_count += 1
+                            else:
+                                # Player Info stats parsing
+                                p_data = parse_player_info_screenshot(text, roster_names)
+                                p_name = p_data["Player Name"]
+                                
+                                if p_name:
+                                    idx = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == p_name].index[0]
+                                    
+                                    # Update stats if extracted values are greater than 0
+                                    if p_data["Battle Power"] > 0:
+                                        st.session_state.roster_df.at[idx, "Battle Power"] = p_data["Battle Power"]
+                                        if p_name not in st.session_state.bp_history:
+                                            st.session_state.bp_history[p_name] = []
+                                        st.session_state.bp_history[p_name].append({
+                                            "Date": str(scan_date),
+                                            "Battle Power": p_data["Battle Power"]
+                                        })
+                                    if p_data["Castle Level"] > 0:
+                                        st.session_state.roster_df.at[idx, "Castle Level"] = p_data["Castle Level"]
+                                    if p_data["Lord Level"] > 0:
+                                        st.session_state.roster_df.at[idx, "Lord Level"] = p_data["Lord Level"]
+                                    if p_data["Individual Reputation"] > 0:
+                                        st.session_state.roster_df.at[idx, "Individual Reputation"] = p_data["Individual Reputation"]
+                                    if p_data["Military Rank"] != "":
+                                        st.session_state.roster_df.at[idx, "Military Rank"] = p_data["Military Rank"]
+                                    if p_data["Kills"] > 0:
+                                        st.session_state.roster_df.at[idx, "Kills"] = p_data["Kills"]
+                                    if p_data["Losses"] > 0:
+                                        st.session_state.roster_df.at[idx, "Losses"] = p_data["Losses"]
+                                        
+                                    success_count += 1
+                                    st.write(f"✅ Successfully parsed profile for **{p_name}** (Castle: {p_data['Castle Level']}, BP: {p_data['Battle Power']:,})")
+                                else:
+                                    st.write(f"⚠️ Could not match player name in screenshot: `{file.name}`")
+                                    
+                        st.success(f"Batch processing complete! Successfully updated {success_count} record(s).")
     elif passcode != "":
         st.error("Incorrect passcode.")
     else:
