@@ -7,20 +7,16 @@ st.set_page_config(page_title="RIP Alliance Attendance Tracker", layout="wide")
 
 st.title("🛡️ RIP Alliance Attendance Tracker")
 
-# Navigation Sidebar
-page = st.sidebar.selectbox("Navigation", ["Upload Event Screenshots", "Alliance Overview & Stats", "Master Roster", "Event Management"])
-
-# Initialize Session State for Custom Events and Event Logs
+# Initialize Session State
 if 'events_list' not in st.session_state:
     st.session_state.events_list = ["Elite Wars", "Fortress War", "Realm Invasion", "Void War", "Territory Defense", "Elite Adventure"]
 
 if 'attendance_records' not in st.session_state:
     st.session_state.attendance_records = []
 
-# Master Roster DataFrame (All 98 Members)
-@st.cache_data
-def get_master_roster():
-    return pd.DataFrame({
+# Initialize Roster in Session State so edits (Name changes, Inactive status) persist
+if 'roster_df' not in st.session_state:
+    st.session_state.roster_df = pd.DataFrame({
         "Player Name": [
             "•~SoulTaker~•", "Warbansteiger", "01*BAD*01", "MixMasterMike!", "•FÄLÇÖŅ•", "Mİ RⱭGЄ", "Compa_Gera",
             "ALİ_DEMİR", "SKELETOR", "KÏṪṪŸ", "|~*HEIMDALL*~|", "( ミ BEAR 彡 )", "MikeB1973", "•John•○", "Lisichka",
@@ -51,14 +47,22 @@ def get_master_roster():
             "Member", "Member", "Member", "Member", "Member", "Member", "Member",
             "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member",
             "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member"
-        ]
+        ],
+        "Battle Power": [114868760] + [20000000] * 97,  # Default baseline BP for demo
+        "Status": ["Active"] * 98
     })
 
-roster_df = get_master_roster()
+# Navigation Sidebar
+page = st.sidebar.selectbox("Navigation", [
+    "Upload Event Screenshots", 
+    "Player Profiles", 
+    "Master Roster & Management", 
+    "Alliance Overview & Stats", 
+    "Event Management"
+])
 
 if page == "Upload Event Screenshots":
     st.header("📸 Multi-Screenshot Attendance Uploader")
-    st.markdown("Upload one or multiple screenshots from your game event. Select whether you are capturing **Non-Attendants** or **Attendants**.")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -71,48 +75,90 @@ if page == "Upload Event Screenshots":
     uploaded_files = st.file_uploader("Choose screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
     
     if uploaded_files:
-        st.write(f"📁 **{len(uploaded_files)} screenshot(s) uploaded successfully.**")
-        
+        st.write(f"📁 **{len(uploaded_files)} screenshot(s) uploaded.**")
         for i, file in enumerate(uploaded_files):
             with st.expander(f"Preview Screenshot {i+1}: {file.name}"):
                 img = Image.open(file)
                 st.image(img, use_column_width=True)
                 
-        if st.button("Process All Screenshots & Log Attendance"):
-            with st.spinner("Running OCR across all uploaded images..."):
-                extracted_names = []
+        if st.button("Process Screenshots & Save Records"):
+            with st.spinner("Running OCR..."):
+                detected_names = []
                 for file in uploaded_files:
                     img = Image.open(file)
                     text = pytesseract.image_to_string(img)
-                    for name in roster_df["Player Name"]:
-                        if name in text and name not in extracted_names:
-                            extracted_names.append(name)
+                    for name in st.session_state.roster_df["Player Name"]:
+                        if name in text and name not in detected_names:
+                            detected_names.append(name)
                 
-                st.success(f"Processed {len(uploaded_files)} screenshot(s)! Detected {len(extracted_names)} player names.")
-                st.write(f"**Mode:** {entry_mode}")
-                st.write("Detected Players:", extracted_names)
+                # Save to session records
+                for name in detected_names:
+                    st.session_state.attendance_records.append({
+                        "Event": selected_event,
+                        "Date": str(event_date),
+                        "Player": name,
+                        "Type": entry_mode
+                    })
+                st.success(f"Successfully logged {len(detected_names)} attendance entries for {selected_event} ({event_date})!")
+
+elif page == "Player Profiles":
+    st.header("👤 Individual Player Profile & Trends")
+    
+    player_list = sorted(st.session_state.roster_df["Player Name"].unique())
+    selected_player = st.selectbox("Select Player", player_list)
+    
+    player_row = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == selected_player].iloc[0]
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Alliance Rank", player_row["Alliance Rank"])
+    col2.metric("Current Battle Power", f"{player_row['Battle Power']:,}")
+    col3.metric("Status", player_row["Status"])
+    
+    st.subheader("📈 Battle Power Trend Over Time")
+    # Mock historical BP data for demonstration
+    bp_trend_data = pd.DataFrame({
+        "Date": ["2026-10-01", "2026-10-08", "2026-10-15", "2026-10-18"],
+        "Battle Power": [player_row["Battle Power"] * 0.95, player_row["Battle Power"] * 0.97, player_row["Battle Power"] * 0.99, player_row["Battle Power"]]
+    })
+    st.line_chart(bp_trend_data.set_index("Date"))
+    
+    st.subheader("📋 Event Participation History")
+    player_records = [r for r in st.session_state.attendance_records if r["Player"] == selected_player]
+    if player_records:
+        st.dataframe(pd.DataFrame(player_records), use_container_width=True)
+    else:
+        st.info("No event records logged for this player yet.")
+
+elif page == "Master Roster & Management":
+    st.header("👥 Master Roster & Member Management")
+    st.markdown("Update player avatar names or toggle members between **Active** and **Inactive**.")
+    
+    # Editable Roster Table
+    edited_roster = st.data_editor(
+        st.session_state.roster_df, 
+        num_rows="dynamic",
+        use_container_width=True,
+        key="roster_editor"
+    )
+    st.session_state.roster_df = edited_roster
+    st.success("Changes to roster saved automatically.")
+
+elif page == "Alliance Overview & Stats":
+    st.header("📊 Alliance Overview & Logs")
+    st.metric("Total Members in Roster", len(st.session_state.roster_df))
+    st.metric("Total Logged Attendance Records", len(st.session_state.attendance_records))
+    
+    if st.session_state.attendance_records:
+        st.subheader("All Logged Records")
+        st.dataframe(pd.DataFrame(st.session_state.attendance_records), use_container_width=True)
+    else:
+        st.info("Upload screenshots in the upload tab to start populating records.")
 
 elif page == "Event Management":
     st.header("⚙️ Event Management")
-    st.markdown("Add new event types to the dropdown list so you can track custom or new game events.")
-    
-    new_event_name = st.text_input("New Event Name (e.g. Sanguine Siege, Alliance Championship)")
+    new_ev = st.text_input("New Event Name")
     if st.button("Add Event"):
-        if new_event_name and new_event_name not in st.session_state.events_list:
-            st.session_state.events_list.append(new_event_name)
-            st.success(f"Added '{new_event_name}' to the event list!")
-        else:
-            st.warning("Please enter a valid, unique event name.")
-            
-    st.subheader("Current Active Events")
-    for ev in st.session_state.events_list:
-        st.write(f"- {ev}")
-
-elif page == "Alliance Overview & Stats":
-    st.header("📊 Alliance Attendance Dashboard")
-    st.metric("Total Roster Members", len(roster_df))
-    st.markdown("Dashboard statistics and historical trends will appear here as events are logged.")
-
-elif page == "Master Roster":
-    st.header("👥 RIP Master Roster (98 Members)")
-    st.dataframe(roster_df, use_container_width=True)
+        if new_ev and new_ev not in st.session_state.events_list:
+            st.session_state.events_list.append(new_ev)
+            st.success(f"Added {new_ev}!")
+    st.write("Active Events:", st.session_state.events_list)
