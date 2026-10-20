@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from PIL import Image
 import pytesseract
+from difflib import SequenceMatcher
 
 st.set_page_config(page_title="RIP Alliance Attendance Tracker", layout="wide")
 
@@ -68,7 +69,39 @@ st.markdown(
 )
 
 # ---------------------------------------------------------
-# 1. MASTER ROSTER: RANK, BP, STATUS FULLY POPULATED. OTHERS BLANK.
+# FUZZY MATCHING HELPER FUNCTION
+# ---------------------------------------------------------
+def clean_text(text):
+    """Strip special symbols and lowercase for comparison"""
+    return "".join(c for c in text if c.isalnum()).lower()
+
+def find_best_roster_match(ocr_chunk, roster_names, cutoff=0.70):
+    """Finds the closest matching roster name given an OCR text snippet"""
+    best_match = None
+    highest_score = 0.0
+    cleaned_chunk = clean_text(ocr_chunk)
+    
+    if len(cleaned_chunk) < 3: # Skip tiny fragments
+        return None, 0.0
+        
+    for name in roster_names:
+        cleaned_name = clean_text(name)
+        # Check direct substring containment first
+        if cleaned_name in cleaned_chunk or cleaned_chunk in cleaned_name:
+            return name, 1.0
+            
+        # Fallback to sequence similarity ratio
+        score = SequenceMatcher(None, cleaned_chunk, cleaned_name).ratio()
+        if score > highest_score:
+            highest_score = score
+            best_match = name
+            
+    if highest_score >= cutoff:
+        return best_match, highest_score
+    return None, 0.0
+
+# ---------------------------------------------------------
+# 1. MASTER ROSTER INITIALIZATION
 # ---------------------------------------------------------
 if 'roster_df' not in st.session_state:
     st.session_state.roster_df = pd.DataFrame({
@@ -103,22 +136,7 @@ if 'roster_df' not in st.session_state:
             "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member",
             "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member"
         ],
-        "Battle Power": [
-            114868760, 19755892, 46233787, 73798788, 27125931, 33185471, 14412624,
-            41320177, 30311814, 27592265, 53629229, 14484362, 29558050, 64213255, 12870792,
-            24504174, 32362970, 13481429, 20718008, 41983374, 14223374, 29167177,
-            13214323, 28068481, 17422525, 32072931, 22049897, 17153913, 22959795, 13353616,
-            16340322, 17826745, 16798028, 0, 17597305, 20851556, 23351759,
-            22416721, 16595288, 16987720, 18864239, 25294936, 17687980, 20048433,
-            16493289, 21199760, 26577988, 15101687, 17835737, 20452615, 11007546, 10329042,
-            20292626, 13949713, 22701921, 22615040, 10044142, 28685097, 16881537,
-            17039949, 12238796, 12710750, 8655503, 12561949, 0, 29729176, 11624664,
-            20266930, 9329853, 10820403, 17063715, 46720961, 20773665, 0,
-            9351327, 17047386, 13851926, 18706825, 12153728, 21693287, 22976112,
-            13134740, 11073114, 6968217, 12849922, 8767112, 9780074, 16478082,
-            16008706, 18590299, 15498491, 20010237, 18409578, 22880798, 16406189, 29270139,
-            12223807, 18231946
-        ],
+        "Battle Power": [0] * 98,
         "Kills": [0] * 98,
         "Losses": [0] * 98,
         "Castle Level": [0] * 98,
@@ -296,7 +314,7 @@ elif page == "Alliance Overview & Stats":
         st.dataframe(pd.DataFrame(st.session_state.attendance_records), use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# PAGE 3: UPLOAD SCREENSHOTS
+# PAGE 3: UPLOAD SCREENSHOTS (FUZZY MATCHING ENABLED)
 # ---------------------------------------------------------
 elif page == "Upload Event Screenshots":
     st.subheader("📸 Bulk Screenshot Uploader")
@@ -318,7 +336,7 @@ elif page == "Upload Event Screenshots":
             entry_mode = st.radio("Logging Mode:", ["Log Non-Attendants ('Not Entered')", "Log Attendants ('Battlers')"], horizontal=True)
         else:
             scan_date = st.date_input("Stat Scan Date")
-            st.markdown("💡 *Tip: You can select up to **20 screenshots at once** to quickly update player stats across your roster.*")
+            st.markdown("💡 *Tip: You can select up to **20 screenshots at once**. Fuzzy matching will automatically resolve font and symbol variances against your roster.*")
 
         uploaded_files = st.file_uploader("Choose screenshot(s)... (Max 20 files)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         
@@ -330,37 +348,37 @@ elif page == "Upload Event Screenshots":
                 for i, file in enumerate(uploaded_files):
                     with st.expander(f"Preview Screenshot {i+1}: {file.name}"):
                         img = Image.open(file)
-                        st.image(img, use_column_width=True)
+                        st.image(img, use_container_width=True)
                         
-                if st.button("Process Batch Screenshots"):
-                    with st.spinner("Running OCR across batch..."):
+                if st.button("Process Batch Screenshots with Fuzzy Match"):
+                    with st.spinner("Running OCR and Fuzzy Name Matching..."):
+                        roster_names = st.session_state.roster_df["Player Name"].tolist()
+                        matched_members = set()
+                        
+                        for file in uploaded_files:
+                            img = Image.open(file)
+                            text = pytesseract.image_to_string(img)
+                            # Split text into lines or words to check against names
+                            lines = text.split('\n')
+                            for line in lines:
+                                # Test each line against fuzzy matching
+                                best_match, score = find_best_roster_match(line, roster_names, cutoff=0.75)
+                                if best_match:
+                                    matched_members.add(best_match)
+                        
                         if "Attendance" in upload_type:
-                            detected_names = []
-                            for file in uploaded_files:
-                                img = Image.open(file)
-                                text = pytesseract.image_to_string(img)
-                                for name in st.session_state.roster_df["Player Name"]:
-                                    if name in text and name not in detected_names:
-                                        detected_names.append(name)
-                            
-                            for name in detected_names:
+                            for name in matched_members:
                                 st.session_state.attendance_records.append({
                                     "Event": selected_event,
                                     "Date": str(event_date),
                                     "Player": name,
                                     "Status": "Not Entered" if "Non-Attendants" in entry_mode else "Entered"
                                 })
-                            st.success(f"Successfully logged {len(detected_names)} attendance entries across {len(uploaded_files)} screenshot(s)!")
+                            st.success(f"Successfully matched and logged {len(matched_members)} attendance entries across {len(uploaded_files)} screenshot(s)!")
                         else:
-                            matched_count = 0
-                            for file in uploaded_files:
-                                img = Image.open(file)
-                                text = pytesseract.image_to_string(img)
-                                for idx, row in st.session_state.roster_df.iterrows():
-                                    p_name = row["Player Name"]
-                                    if p_name in text:
-                                        matched_count += 1
-                            st.success(f"Processed {len(uploaded_files)} player info screenshots! Cross-referenced and detected {matched_count} member occurrences.")
+                            st.success(f"Processed {len(uploaded_files)} screenshots! Successfully fuzzy-matched {len(matched_members)} unique alliance members.")
+                            if matched_members:
+                                st.write("**Matched Members Found:**", list(matched_members))
     elif passcode != "":
         st.error("Incorrect passcode.")
     else:
