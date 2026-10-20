@@ -5,6 +5,19 @@ import pytesseract
 
 st.set_page_config(page_title="RIP Alliance Attendance Tracker", layout="wide")
 
+# Custom CSS to make the sidebar narrower for landscape mode
+st.markdown(
+    """
+    <style>
+        [data-testid="stSidebar"] {
+            min-width: 200px;
+            max-width: 240px;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 st.title("🛡️ RIP Alliance Attendance Tracker")
 
 # ---------------------------------------------------------
@@ -100,12 +113,11 @@ if 'attendance_records' not in st.session_state:
     st.session_state.attendance_records = october_historical_logs
 
 # ---------------------------------------------------------
-# 3. NAVIGATION SIDEBAR
+# 3. NAVIGATION SIDEBAR (REDUCED PAGES)
 # ---------------------------------------------------------
 st.sidebar.markdown("### 📌 Navigation")
 page = st.sidebar.radio("Go to:", [
     "Player Profiles", 
-    "Master Roster & Status", 
     "Alliance Overview & Stats", 
     "Upload Event Screenshots", 
     "Admin / Roster Edits"
@@ -116,7 +128,7 @@ page = st.sidebar.radio("Go to:", [
 # ---------------------------------------------------------
 if page == "Player Profiles":
     st.header("👤 Player Profile & Attendance History")
-    st.markdown("Tap any rank button below to list members with their correct Battle Power, then tap a member to view their profile.")
+    st.markdown("Tap any rank button below to list members, then tap a member to view their profile.")
     
     # Touch Pills for Rank Selection
     rank_cols = st.columns(5)
@@ -194,15 +206,7 @@ if page == "Player Profiles":
     st.line_chart(bp_data.set_index("Date"))
 
 # ---------------------------------------------------------
-# PAGE 2: MASTER ROSTER (READ-ONLY)
-# ---------------------------------------------------------
-elif page == "Master Roster & Status":
-    st.header("👥 RIP Master Roster (98 Members)")
-    st.markdown("Includes rank, correct individual battle power, and activity status.")
-    st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
-
-# ---------------------------------------------------------
-# PAGE 3: ALLIANCE OVERVIEW & STATS (READ-ONLY)
+# PAGE 2: ALLIANCE OVERVIEW & STATS (READ-ONLY)
 # ---------------------------------------------------------
 elif page == "Alliance Overview & Stats":
     st.header("📊 Alliance Participation Overview")
@@ -218,7 +222,7 @@ elif page == "Alliance Overview & Stats":
         st.dataframe(pd.DataFrame(st.session_state.attendance_records), use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# PAGE 4: UPLOAD SCREENSHOTS (FOR DEPUTIES)
+# PAGE 3: UPLOAD SCREENSHOTS (FOR DEPUTIES)
 # ---------------------------------------------------------
 elif page == "Upload Event Screenshots":
     st.header("📸 Screenshot Attendance Uploader")
@@ -260,7 +264,7 @@ elif page == "Upload Event Screenshots":
                 st.success(f"Logged {len(detected_names)} entries for {selected_event} ({event_date})!")
 
 # ---------------------------------------------------------
-# PAGE 5: ADMIN / ROSTER EDITS
+# PAGE 4: ADMIN / ROSTER EDITS
 # ---------------------------------------------------------
 elif page == "Admin / Roster Edits":
     st.header("⚙️ Admin & Roster Edits")
