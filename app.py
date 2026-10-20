@@ -3,6 +3,7 @@ import pandas as pd
 from PIL import Image
 import pytesseract
 from difflib import SequenceMatcher
+import os
 import re
 
 st.set_page_config(page_title="RIP Alliance Attendance Tracker", layout="wide")
@@ -70,7 +71,102 @@ st.markdown(
 )
 
 # ---------------------------------------------------------
-# FUZZY MATCHING & TARGETED OCR PARSER HELPERS
+# PERSISTENT STORAGE FILE PATHS
+# ---------------------------------------------------------
+ROSTER_FILE = "roster_data.csv"
+HISTORY_FILE = "bp_history.csv"
+
+# Load or Initialize Master Roster with Permanent Storage
+if 'roster_df' not in st.session_state:
+    if os.path.exists(ROSTER_FILE):
+        st.session_state.roster_df = pd.read_csv(ROSTER_FILE)
+    else:
+        st.session_state.roster_df = pd.DataFrame({
+            "Player Name": [
+                "•~SoulTaker~•", "Warbansteiger", "01*BAD*01", "MixMasterMike!", "•FÄLÇÖŅ•", "Mİ RⱭGЄ", "Compa_Gera",
+                "ALİ_DEMİR", "SKELETOR", "KÏṪṪŸ", "|~*HEIMDALL*~|", "( ミ BEAR 彡 )", "MikeB1973", "•John•○", "Lisichka",
+                "M.PΣΠDЯΛGΘΠ.00", "xT_DEATH_Tx", "triXXter2304", "¿?¿SaVi¿?¿", "•••STYX•••", "GRO↑نطو", "₩E₮_ÐRƸAɱƵ",
+                "Twatapotomous", "VillageWarrior", "▪■CH£CH£■▪", "AndresEled", "Minion.B", "Ġñøşïş", "•REG!O•", "MB",
+                "Gemlikli16", "༄🏽BugsBunny•", "_SţõŗmŔäïdēŗ_", "*|~BebePanda~|*", "Pøwer҉", "卄 モ .爪爪爪.", "Edelvejs",
+                "№ C r a z y №", "Dominus™`", "Cosmonaut®", "Δpredator®", ".JOOKER.", "•Peresvet•", "___Lazy___",
+                "§Grutovsky§", "Maldit@!", "ϒ_G", ":::MaxHook:::", "..Erik..", "神秘紅", "kadir3322", "OoöõpsyyyWoLFy",
+                "JuanWolfSantz", "*Skynet*", "ȼ₣ÐÐ¥LØ₦₲ÐÏĈҜ", "«1»ABDO", "°¶~iS~¶°", "ቔƥµŧɕhêŘቔ", "Mrwakandaforever",
+                "豬頭瓶子", "Riad", "badi_4", "~•CHARLS~•", "Marihuna.Vnzl™", "Abdo0027", "#FATİHSULTAN#HAN", "josevnzl",
+                "Mary@Chica", "«MAX»...", "Wolf ᲼᲼forever", "不愛水的魚～", "°•WalterWhite•°", "VENOM", "XeNa.CheF.",
+                "hamza£hegazy", "TOXXICBUNNY", "DiMPeR2.0", "®Goodboy®", "_Qahtan_", "Madara.som3a", "DARKNESS_^",
+                "HorusRun", "Alfonso....*_*", "ArturAlexiy", "G.aleman^*_*", "SHOGUNsrb", "BONSEK", "kang~tahu",
+                "tsopanakos", "002 سرراف", "kurt000", "zazouka ××ஒ", "عـبـغـش31DZ", "Vdehke", "eskanor.leon", "susanstorms",
+                "Adrián@Arg.", "†•Dark•Horse•†"
+            ],
+            "Alliance Rank": [
+                "Alliance Leader", "Deputy", "Deputy", "Deputy", "Deputy", "Deputy", "Deputy",
+                "Officer", "Officer", "Officer", "Officer", "Officer", "Officer", "Officer", "Officer",
+                "Officer", "Officer", "Officer", "Officer", "Officer", "Officer", "Officer",
+                "Officer", "Officer", "Officer", "Officer", "Elite", "Elite", "Elite", "Elite",
+                "Elite", "Elite", "Elite", "Elite", "Elite", "Elite", "Elite",
+                "Elite", "Elite", "Elite", "Elite", "Elite", "Elite", "Elite",
+                "Elite", "Elite", "Elite", "Elite", "Member", "Member", "Member", "Member",
+                "Member", "Member", "Member", "Member", "Member", "Member", "Member",
+                "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member",
+                "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member",
+                "Member", "Member", "Member", "Member", "Member", "Member", "Member",
+                "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member",
+                "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member"
+            ],
+            "Battle Power": [
+                114868760, 19755892, 46233787, 73798788, 27125931, 33185471, 14412624,
+                41320177, 30311814, 27592265, 53629229, 14484362, 29558050, 64213255, 12870792,
+                24504174, 32362970, 13481429, 20718008, 41983374, 14223374, 29167177,
+                13214323, 28068481, 17422525, 32072931, 22049897, 17153913, 22959795, 13353616,
+                16340322, 17826745, 16798028, 0, 17597305, 20851556, 23351759,
+                22416721, 16595288, 16987720, 18864239, 25294936, 17687980, 20048433,
+                16493289, 21199760, 26577988, 15101687, 17835737, 20452615, 11007546, 10329042,
+                20292626, 13949713, 22701921, 22615040, 10044142, 28685097, 16881537,
+                17039949, 12238796, 12710750, 8655503, 12561949, 0, 29729176, 11624664,
+                20266930, 9329853, 10820403, 17063715, 46720961, 20773665, 0,
+                9351327, 17047386, 13851926, 18706825, 12153728, 21693287, 22976112,
+                13134740, 11073114, 6968217, 12849922, 8767112, 9780074, 16478082,
+                16008706, 18590299, 15498491, 20010237, 18409578, 22880798, 16406189, 29270139,
+                12223807, 18231946
+            ],
+            "Kills": [0] * 98,
+            "Losses": [0] * 98,
+            "Castle Level": [0] * 98,
+            "Lord Level": [0] * 98,
+            "Individual Reputation": [0] * 98,
+            "Power Ranking": [0] * 98,
+            "Military Rank": [""] * 98,
+            "Status": ["Active"] * 98
+        })
+        st.session_state.roster_df.to_csv(ROSTER_FILE, index=False)
+
+def save_roster():
+    st.session_state.roster_df.to_csv(ROSTER_FILE, index=False)
+
+if 'selected_player_name' not in st.session_state:
+    st.session_state.selected_player_name = "•~SoulTaker~•"
+
+if 'active_rank_tab' not in st.session_state:
+    st.session_state.active_rank_tab = "Leader"
+
+# Load or Initialize BP History
+if 'bp_history' not in st.session_state:
+    if os.path.exists(HISTORY_FILE):
+        hist_df = pd.read_csv(HISTORY_FILE)
+        st.session_state.bp_history = hist_df.groupby("Player").apply(lambda x: x[["Date", "Battle Power"]].to_dict('records')).to_dict()
+    else:
+        st.session_state.bp_history = {}
+
+def save_history():
+    rows = []
+    for player, records in st.session_state.bp_history.items():
+        for rec in records:
+            rows.append({"Player": player, "Date": rec["Date"], "Battle Power": rec["Battle Power"]})
+    if rows:
+        pd.DataFrame(rows).to_csv(HISTORY_FILE, index=False)
+
+# ---------------------------------------------------------
+# FUZZY MATCHING & OCR PARSER HELPERS
 # ---------------------------------------------------------
 def clean_text(text):
     return "".join(c for c in text if c.isalnum()).lower()
@@ -98,24 +194,12 @@ def find_best_roster_match(ocr_chunk, roster_names, cutoff=0.70):
     return None, 0.0
 
 def extract_number(text):
-    """Extracts the first valid integer from a string, ignoring commas/symbols"""
     nums = re.findall(r'\d[\d,]*', text)
     if nums:
         return int(nums[0].replace(',', ''))
     return 0
 
 def parse_player_info_screenshot(ocr_text, roster_names):
-    """
-    Targeted parser matching labels next to/following values:
-    - Player name near the top
-    - Castle level near 'lv.'
-    - Lord Level near 'lv.'
-    - Individual Reputation
-    - Military Rank
-    - Power Ranking
-    - Battle Power
-    - Kills and Losses
-    """
     lines = [line.strip() for line in ocr_text.split('\n') if line.strip()]
     parsed_data = {
         "Player Name": None,
@@ -129,7 +213,6 @@ def parse_player_info_screenshot(ocr_text, roster_names):
         "Losses": 0
     }
     
-    # 1. Identify player name from top lines
     for line in lines[:6]:
         match, score = find_best_roster_match(line, roster_names, cutoff=0.65)
         if match:
@@ -143,11 +226,9 @@ def parse_player_info_screenshot(ocr_text, roster_names):
                 parsed_data["Player Name"] = match
                 break
 
-    # 2. Parse stats by looking for labels and adjacent numbers/text
     for i, line in enumerate(lines):
         line_lower = line.lower()
         
-        # Castle Level or Lord Level near "lv."
         if "lv." in line_lower:
             num = extract_number(line)
             if num > 0:
@@ -156,13 +237,11 @@ def parse_player_info_screenshot(ocr_text, roster_names):
                 elif "lord" in line_lower or parsed_data["Castle Level"] > 0:
                     parsed_data["Lord Level"] = num
         
-        # Fallback castle level check if "lv" is separate or missing dot
         if "castle" in line_lower:
             num = extract_number(line)
             if num > 0:
                 parsed_data["Castle Level"] = num
 
-        # Individual Reputation
         if "reputation" in line_lower or "individual" in line_lower:
             val = extract_number(line)
             if val > 0:
@@ -170,7 +249,6 @@ def parse_player_info_screenshot(ocr_text, roster_names):
             elif i + 1 < len(lines):
                 parsed_data["Individual Reputation"] = extract_number(lines[i+1])
 
-        # Military Rank (Ensuring it doesn't grab Power Ranking)
         if "military rank" in line_lower or ("rank" in line_lower and "power" not in line_lower and "position" not in line_lower):
             parts = line.split(":")
             if len(parts) > 1 and parts[1].strip():
@@ -178,7 +256,6 @@ def parse_player_info_screenshot(ocr_text, roster_names):
             elif i + 1 < len(lines):
                 parsed_data["Military Rank"] = lines[i+1].strip()
 
-        # Power Ranking
         if "power ranking" in line_lower or "power rank" in line_lower:
             val = extract_number(line)
             if val > 0:
@@ -186,7 +263,6 @@ def parse_player_info_screenshot(ocr_text, roster_names):
             elif i + 1 < len(lines):
                 parsed_data["Power Ranking"] = extract_number(lines[i+1])
 
-        # Battle Power
         if "battle power" in line_lower or (line_lower == "power" and "ranking" not in line_lower):
             val = extract_number(line)
             if val > 0:
@@ -194,7 +270,6 @@ def parse_player_info_screenshot(ocr_text, roster_names):
             elif i + 1 < len(lines):
                 parsed_data["Battle Power"] = extract_number(lines[i+1])
 
-        # Kills and Losses
         if "kills" in line_lower:
             parsed_data["Kills"] = extract_number(line)
             if parsed_data["Kills"] == 0 and i + 1 < len(lines):
@@ -206,77 +281,6 @@ def parse_player_info_screenshot(ocr_text, roster_names):
                 parsed_data["Losses"] = extract_number(lines[i+1])
 
     return parsed_data
-
-# ---------------------------------------------------------
-# 1. MASTER ROSTER INITIALIZATION (PERSISTENT SESSION STATE)
-# ---------------------------------------------------------
-if 'roster_df' not in st.session_state:
-    st.session_state.roster_df = pd.DataFrame({
-        "Player Name": [
-            "•~SoulTaker~•", "Warbansteiger", "01*BAD*01", "MixMasterMike!", "•FÄLÇÖŅ•", "Mİ RⱭGЄ", "Compa_Gera",
-            "ALİ_DEMİR", "SKELETOR", "KÏṪṪŸ", "|~*HEIMDALL*~|", "( ミ BEAR 彡 )", "MikeB1973", "•John•○", "Lisichka",
-            "M.PΣΠDЯΛGΘΠ.00", "xT_DEATH_Tx", "triXXter2304", "¿?¿SaVi¿?¿", "•••STYX•••", "GRO↑نطو", "₩E₮_ÐRƸAɱƵ",
-            "Twatapotomous", "VillageWarrior", "▪■CH£CH£■▪", "AndresEled", "Minion.B", "Ġñøşïş", "•REG!O•", "MB",
-            "Gemlikli16", "༄🏽BugsBunny•", "_SţõŗmŔäïdēŗ_", "*|~BebePanda~|*", "Pøwer҉", "卄 モ .爪爪爪.", "Edelvejs",
-            "№ C r a z y №", "Dominus™`", "Cosmonaut®", "Δpredator®", ".JOOKER.", "•Peresvet•", "___Lazy___",
-            "§Grutovsky§", "Maldit@!", "ϒ_G", ":::MaxHook:::", "..Erik..", "神秘紅", "kadir3322", "OoöõpsyyyWoLFy",
-            "JuanWolfSantz", "*Skynet*", "ȼ₣ÐÐ¥LØ₦₲ÐÏĈҜ", "«1»ABDO", "°¶~iS~¶°", "ቔƥµŧɕhêŘቔ", "Mrwakandaforever",
-            "豬頭瓶子", "Riad", "badi_4", "~•CHARLS~•", "Marihuna.Vnzl™", "Abdo0027", "#FATİHSULTAN#HAN", "josevnzl",
-            "Mary@Chica", "«MAX»...", "Wolf ᲼᲼forever", "不愛水的魚～", "°•WalterWhite•°", "VENOM", "XeNa.CheF.",
-            "hamza£hegazy", "TOXXICBUNNY", "DiMPeR2.0", "®Goodboy®", "_Qahtan_", "Madara.som3a", "DARKNESS_^",
-            "HorusRun", "Alfonso....*_*", "ArturAlexiy", "G.aleman^*_*", "SHOGUNsrb", "BONSEK", "kang~tahu",
-            "tsopanakos", "002 سرراف", "kurt000", "zazouka ××ஒ", "عـبـغـش31DZ", "Vdehke", "eskanor.leon", "susanstorms",
-            "Adrián@Arg.", "†•Dark•Horse•†"
-        ],
-        "Alliance Rank": [
-            "Alliance Leader", "Deputy", "Deputy", "Deputy", "Deputy", "Deputy", "Deputy",
-            "Officer", "Officer", "Officer", "Officer", "Officer", "Officer", "Officer", "Officer",
-            "Officer", "Officer", "Officer", "Officer", "Officer", "Officer", "Officer",
-            "Officer", "Officer", "Officer", "Officer", "Elite", "Elite", "Elite", "Elite",
-            "Elite", "Elite", "Elite", "Elite", "Elite", "Elite", "Elite",
-            "Elite", "Elite", "Elite", "Elite", "Elite", "Elite", "Elite",
-            "Elite", "Elite", "Elite", "Elite", "Member", "Member", "Member", "Member",
-            "Member", "Member", "Member", "Member", "Member", "Member", "Member",
-            "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member",
-            "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member",
-            "Member", "Member", "Member", "Member", "Member", "Member", "Member",
-            "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member",
-            "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member"
-        ],
-        "Battle Power": [
-            114868760, 19755892, 46233787, 73798788, 27125931, 33185471, 14412624,
-            41320177, 30311814, 27592265, 53629229, 14484362, 29558050, 64213255, 12870792,
-            24504174, 32362970, 13481429, 20718008, 41983374, 14223374, 29167177,
-            13214323, 28068481, 17422525, 32072931, 22049897, 17153913, 22959795, 13353616,
-            16340322, 17826745, 16798028, 0, 17597305, 20851556, 23351759,
-            22416721, 16595288, 16987720, 18864239, 25294936, 17687980, 20048433,
-            16493289, 21199760, 26577988, 15101687, 17835737, 20452615, 11007546, 10329042,
-            20292626, 13949713, 22701921, 22615040, 10044142, 28685097, 16881537,
-            17039949, 12238796, 12710750, 8655503, 12561949, 0, 29729176, 11624664,
-            20266930, 9329853, 10820403, 17063715, 46720961, 20773665, 0,
-            9351327, 17047386, 13851926, 18706825, 12153728, 21693287, 22976112,
-            13134740, 11073114, 6968217, 12849922, 8767112, 9780074, 16478082,
-            16008706, 18590299, 15498491, 20010237, 18409578, 22880798, 16406189, 29270139,
-            12223807, 18231946
-        ],
-        "Kills": [0] * 98,
-        "Losses": [0] * 98,
-        "Castle Level": [0] * 98,
-        "Lord Level": [0] * 98,
-        "Individual Reputation": [0] * 98,
-        "Power Ranking": [0] * 98,
-        "Military Rank": [""] * 98,
-        "Status": ["Active"] * 98
-    })
-
-if 'selected_player_name' not in st.session_state:
-    st.session_state.selected_player_name = "•~SoulTaker~•"
-
-if 'active_rank_tab' not in st.session_state:
-    st.session_state.active_rank_tab = "Leader"
-
-if 'bp_history' not in st.session_state:
-    st.session_state.bp_history = {}
 
 # ---------------------------------------------------------
 # 2. RESTORE PRE-LOGGED OCTOBER EVENTS
@@ -385,21 +389,18 @@ if page == "Player Profiles":
     power_rank_disp = f"{player_row['Power Ranking']:,}" if player_row['Power Ranking'] > 0 else "—"
     mil_disp = player_row['Military Rank'] if player_row['Military Rank'] != "" else "—"
 
-    # Row 1 Metrics
     r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
     r1_c1.metric("Rank", player_row["Alliance Rank"])
     r1_c2.metric("Battle Power", bp_disp)
     r1_c3.metric("Castle Lvl", castle_disp)
     r1_c4.metric("Lord Lvl", lord_disp)
     
-    # Row 2 Metrics (Includes dedicated Power Ranking & Military Rank)
     r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
     r2_c1.metric("Kills", kills_disp)
     r2_c2.metric("Losses", losses_disp)
     r2_c3.metric("Power Ranking", power_rank_disp)
     r2_c4.metric("Military Rank", mil_disp)
 
-    # Row 3 Metrics
     r3_c1, r3_c2, r3_c3 = st.columns(3)
     r3_c1.metric("Reputation", rep_disp)
     r3_c2.metric("Events Attended", f"{attended_count} / {all_events_count} ({attendance_pct:.1f}%)")
@@ -442,7 +443,7 @@ elif page == "Alliance Overview & Stats":
         st.dataframe(pd.DataFrame(st.session_state.attendance_records), use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# PAGE 3: UPLOAD SCREENSHOTS (PARSER ENABLED)
+# PAGE 3: UPLOAD SCREENSHOTS (PERSISTENT SAVING)
 # ---------------------------------------------------------
 elif page == "Upload Event Screenshots":
     st.subheader("📸 Bulk Screenshot Uploader")
@@ -512,6 +513,8 @@ elif page == "Upload Event Screenshots":
                                             "Date": str(scan_date),
                                             "Battle Power": p_data["Battle Power"]
                                         })
+                                        save_history()
+                                        
                                     if p_data["Castle Level"] > 0:
                                         st.session_state.roster_df.at[idx, "Castle Level"] = p_data["Castle Level"]
                                     if p_data["Lord Level"] > 0:
@@ -527,12 +530,13 @@ elif page == "Upload Event Screenshots":
                                     if p_data["Losses"] > 0:
                                         st.session_state.roster_df.at[idx, "Losses"] = p_data["Losses"]
                                         
+                                    save_roster()
                                     success_count += 1
                                     st.write(f"✅ Successfully parsed profile for **{p_name}** (Castle: {p_data['Castle Level']}, BP: {p_data['Battle Power']:,})")
                                 else:
                                     st.write(f"⚠️ Could not match player name in screenshot: `{file.name}`")
                                     
-                        st.success(f"Batch processing complete! Successfully updated {success_count} record(s).")
+                        st.success(f"Batch processing complete! Successfully updated and saved {success_count} record(s).")
     elif passcode != "":
         st.error("Incorrect passcode.")
     else:
@@ -573,7 +577,7 @@ elif page == "Admin / Roster Edits":
             
             c7, c8 = st.columns(2)
             new_power_rank = c7.number_input("Power Ranking", value=int(current_row["Power Ranking"]), step=1)
-            current_mil = current_row["Military Rank"] if current_row["Military Rank"] != "" else ""
+            current_mil = current_row["Military Rank"] if pd.notna(current_row["Military Rank"]) else ""
             new_mil_rank = c8.text_input("Military Rank", value=current_mil)
             
             scan_date_input = st.date_input("Record Scan Date for Trend History")
@@ -608,7 +612,9 @@ elif page == "Admin / Roster Edits":
                     "Battle Power": new_bp
                 })
                 
-                st.success(f"Successfully updated profile records and history for {target_player}!")
+                save_roster()
+                save_history()
+                st.success(f"Successfully updated and permanently saved records for {target_player}!")
     elif passcode != "":
         st.error("Incorrect passcode.")
     else:
