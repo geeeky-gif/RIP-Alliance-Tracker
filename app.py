@@ -47,6 +47,10 @@ if 'roster_df' not in st.session_state:
         "Status": ["Active"] * 98
     })
 
+# Initialize Session State for Selected Player in Profiles (Mobile Button friendly)
+if 'selected_player_name' not in st.session_state:
+    st.session_state.selected_player_name = "•~SoulTaker~•"
+
 # ---------------------------------------------------------
 # 2. INITIALIZE PRE-LOGGED OCTOBER EVENTS
 # ---------------------------------------------------------
@@ -54,128 +58,77 @@ if 'events_list' not in st.session_state:
     st.session_state.events_list = ["Elite Wars", "Fortress War", "Realm Invasion", "Void War", "Territory Defense", "Elite Adventure"]
 
 if 'attendance_records' not in st.session_state:
-    # Pre-populate historical October records from processed screenshots
     october_historical_logs = []
-    
-    # Oct 04 - Elite Wars (47 missed)
-    ew_1004_missed = [
-        "Compa_Gera", "01*BAD*01", "Twatapotomous", "GRO↑نطو", "M.PΣΠDЯΛGΘΠ.00", "( ミ BEAR 彡 )", "SKELETOR", "AndresEled",
-        "Ġñøşïş", ".JOOKER.", ":::MaxHook:::", "Gemlikli16", "Maldit@!", "Pøwer҉", "Δpredator®", "༄🏽BugsBunny•",
-        "ArturAlexiy", "~•CHARLS~•", "zazouka ××ஒ", "eskanor.leon", "kadir3322", "Alfonso....*_*", "*Skynet*", "Mary@Chica",
-        "DARKNESS_^", "G.aleman^*_*", "_Qahtan_", "SHOGUNsrb", "ቔƥµŧɕhêŘቔ", "XeNa.CheF.", "TOXXICBUNNY", "hamza£hegazy",
-        "JuanWolfSantz", "Riad", "Adrián@Arg.", "002 سرراف", "Mrwakandaforever", "VENOM", "josevnzl", "Madara.som3a",
-        "عـبـغـش31DZ", "†•Dark•Horse•†", "Vdehke", "«MAX»...", "Abdo0027", "ȼ₣ÐÐ¥LØ₦₲ÐÏĈҜ", "#FATİHSULTAN#HAN"
-    ]
-    for p in ew_1004_missed:
-        october_historical_logs.append({"Event": "Elite Wars", "Date": "2026-10-04", "Player": p, "Status": "Not Entered"})
+    ew_1004 = ["Compa_Gera", "01*BAD*01", "Twatapotomous", "GRO↑نطو", "M.PΣΠDЯΛGΘΠ.00", "( ミ BEAR 彡 )", "SKELETOR", "AndresEled", "Ġñøşïş", ".JOOKER.", ":::MaxHook:::", "Gemlikli16", "Maldit@!", "Pøwer҉", "Δpredator®", "༄🏽BugsBunny•", "ArturAlexiy", "~•CHARLS~•", "zazouka ××ஒ", "eskanor.leon", "kadir3322", "Alfonso....*_*", "*Skynet*", "Mary@Chica", "DARKNESS_^", "G.aleman^*_*", "_Qahtan_", "SHOGUNsrb", "ቔƥµŧɕhêŘቔ", "XeNa.CheF.", "TOXXICBUNNY", "hamza£hegazy", "JuanWolfSantz", "Riad", "Adrián@Arg.", "002 سرراف", "Mrwakandaforever", "VENOM", "josevnzl", "Madara.som3a", "عـبـغـش31DZ", "†•Dark•Horse•†", "Vdehke", "«MAX»...", "Abdo0027", "ȼ₣ÐÐ¥LØ₦₲ÐÏĈҜ", "#FATİHSULTAN#HAN"]
+    for p in ew_1004: october_historical_logs.append({"Event": "Elite Wars", "Date": "2026-10-04", "Player": p, "Status": "Not Entered"})
 
-    # Oct 07 - Elite Wars (23 missed)
-    ew_1007_missed = [
-        "( ミ BEAR 彡 )", "M.PΣΠDЯΛGΘΠ.00", "•••STYX•••", "•John•○", "GRO↑نطو", "ϒ_G", "•Peresvet•", "ArturAlexiy",
-        "عـبـغـش31DZ", "_Qahtan_", "~•CHARLS~•", "hamza£hegazy", "°•WalterWhite•°", "002 سرراف", "DARKNESS_^", "«MAX»...",
-        "Vdehke", "Riad", "josevnzl", "kang~tahu", "†•Dark•Horse•†", "TOXXICBUNNY", "Alfonso....*_*"
-    ]
-    for p in ew_1007_missed:
-        october_historical_logs.append({"Event": "Elite Wars", "Date": "2026-10-07", "Player": p, "Status": "Not Entered"})
+    ew_1007 = ["( ミ BEAR 彡 )", "M.PΣΠDЯΛGΘΠ.00", "•••STYX•••", "•John•○", "GRO↑نطو", "ϒ_G", "•Peresvet•", "ArturAlexiy", "عـبـغـش31DZ", "_Qahtan_", "~•CHARLS~•", "hamza£hegazy", "°•WalterWhite•°", "002 سرراف", "DARKNESS_^", "«MAX»...", "Vdehke", "Riad", "josevnzl", "kang~tahu", "†•Dark•Horse•†", "TOXXICBUNNY", "Alfonso....*_*"]
+    for p in ew_1007: october_historical_logs.append({"Event": "Elite Wars", "Date": "2026-10-07", "Player": p, "Status": "Not Entered"})
 
-    # Oct 08 - Fortress War (40 missed)
-    fw_1008_missed = [
-        "Twatapotomous", "GRO↑نطو", "( ミ BEAR 彡 )", "SKELETOR", "AndresEled", "•••STYX•••", "•Peresvet•", "ϒ_G",
-        "Ġñøşïş", "_SţõŗmŔäïdēŗ_", "Maldit@!", ":::MaxHook:::", "•REG!O•", "eskanor.leon", "DiMPeR2.0", "ȼ₣ÐÐ¥LØ₦₲ÐÏĈҜ",
-        "*Skynet*", "kang~tahu", "Alfonso....*_*", "Riad", "kadir3322", "JuanWolfSantz", "Wolf ᲼᲼forever", "..Erik..",
-        "TOXXICBUNNY", "Vdehke", "OoöõpsyyyWoLFy", "josevnzl", "Abdo0027", "†•Dark•Horse•†", "Mrwakandaforever", "~•CHARLS~•",
-        "Madara.som3a", "عـبـغـش31DZ", "ArturAlexiy", "_Qahtan_", "susanstorms", "VENOM", "002 سرراف", "#FATİHSULTAN#HAN"
-    ]
-    for p in fw_1008_missed:
-        october_historical_logs.append({"Event": "Fortress War", "Date": "2026-10-08", "Player": p, "Status": "Not Entered"})
+    fw_1008 = ["Twatapotomous", "GRO↑نطو", "( ミ BEAR 彡 )", "SKELETOR", "AndresEled", "•••STYX•••", "•Peresvet•", "ϒ_G", "Ġñøşïş", "_SţõŗmŔäïdēŗ_", "Maldit@!", ":::MaxHook:::", "•REG!O•", "eskanor.leon", "DiMPeR2.0", "ȼ₣ÐÐ¥LØ₦₲ÐÏĈҜ", "*Skynet*", "kang~tahu", "Alfonso....*_*", "Riad", "kadir3322", "JuanWolfSantz", "Wolf ᲼᲼forever", "..Erik..", "TOXXICBUNNY", "Vdehke", "OoöõpsyyyWoLFy", "josevnzl", "Abdo0027", "†•Dark•Horse•†", "Mrwakandaforever", "~•CHARLS~•", "Madara.som3a", "عـبـغـش31DZ", "ArturAlexiy", "_Qahtan_", "susanstorms", "VENOM", "002 سرراف", "#FATİHSULTAN#HAN"]
+    for p in fw_1008: october_historical_logs.append({"Event": "Fortress War", "Date": "2026-10-08", "Player": p, "Status": "Not Entered"})
 
-    # Oct 11 - Elite Wars Battle 1 (41 missed)
-    ew_1011_1_missed = [
-        "Mİ RⱭGЄ", "•FÄLÇÖŅ•", "Twatapotomous", "M.PΣΠDЯΛGΘΠ.00", "Lisichka", "GRO↑نطو", "•••STYX•••", "SKELETOR",
-        "( ミ BEAR 彡 )", "•REG!O•", "Maldit@!", "卄 モ .爪爪爪.", "Dominus™`", ":::MaxHook:::", "Ġñøşïş", "ϒ_G",
-        "ቔƥµŧɕhêŘቔ", "JuanWolfSantz", "ArturAlexiy", "tsopanakos", "TOXXICBUNNY", "®Goodboy®", "kurt000", "josevnzl",
-        "Madara.som3a", "°•WalterWhite•°", "Abdo0027", "susanstorms", "~•CHARLS~•", "002 سرراف", "_Qahtan_", "DiMPeR2.0",
-        "«MAX»...", "hamza£hegazy", "VENOM", "Alfonso....*_*", "Vdehke", "Riad", "†•Dark•Horse•†", "kang~tahu", "عـبـغـش31DZ"
-    ]
-    for p in ew_1011_1_missed:
-        october_historical_logs.append({"Event": "Elite Wars (Battle 1)", "Date": "2026-10-11", "Player": p, "Status": "Not Entered"})
+    ew_1011_1 = ["Mİ RⱭGЄ", "•FÄLÇÖŅ•", "Twatapotomous", "M.PΣΠDЯΛGΘΠ.00", "Lisichka", "GRO↑نطو", "•••STYX•••", "SKELETOR", "( ミ BEAR 彡 )", "•REG!O•", "Maldit@!", "卄 モ .爪爪爪.", "Dominus™`", ":::MaxHook:::", "Ġñøşïş", "ϒ_G", "ቔƥµŧɕhêŘቔ", "JuanWolfSantz", "ArturAlexiy", "tsopanakos", "TOXXICBUNNY", "®Goodboy®", "kurt000", "josevnzl", "Madara.som3a", "°•WalterWhite•°", "Abdo0027", "susanstorms", "~•CHARLS~•", "002 سرراف", "_Qahtan_", "DiMPeR2.0", "«MAX»...", "hamza£hegazy", "VENOM", "Alfonso....*_*", "Vdehke", "Riad", "†•Dark•Horse•†", "kang~tahu", "عـبـغـش31DZ"]
+    for p in ew_1011_1: october_historical_logs.append({"Event": "Elite Wars (Battle 1)", "Date": "2026-10-11", "Player": p, "Status": "Not Entered"})
 
-    # Oct 11 - Elite Wars Battle 2 (39 missed)
-    ew_1011_2_missed = [
-        "GRO↑نطو", "xT_DEATH_Tx", "M.PΣΠDЯΛGΘΠ.00", "SKELETOR", "•••STYX•••", "( ミ BEAR 彡 )", "▪■CH£CH£■▪",
-        "卄 モ .爪爪爪.", "MB", "ϒ_G", "•REG!O•", "Dominus™`", "Ġñøşïş", "_SţõŗmŔäïdēŗ_", ":::MaxHook:::", "josevnzl",
-        "عـبـغـش31DZ", "ቔƥµŧɕhêŘቔ", "OoöõpsyyyWoLFy", "«MAX»...", "Vdehke", "badi_4", "#FATİHSULTAN#HAN", "~•CHARLS~•",
-        "神秘紅", "hamza£hegazy", "DiMPeR2.0", "Riad", "ArturAlexiy", "®Goodboy®", "†•Dark•Horse•†", "tsopanakos",
-        "kang~tahu", "Alfonso....*_*", "DARKNESS_^", "002 سرراف", "..Erik..", "SHOGUNsrb", "不愛水的魚～"
-    ]
-    for p in ew_1011_2_missed:
-        october_historical_logs.append({"Event": "Elite Wars (Battle 2)", "Date": "2026-10-11", "Player": p, "Status": "Not Entered"})
+    ew_1011_2 = ["GRO↑نطو", "xT_DEATH_Tx", "M.PΣΠDЯΛGΘΠ.00", "SKELETOR", "•••STYX•••", "( ミ BEAR 彡 )", "▪■CH£CH£■▪", "卄 モ .爪爪爪.", "MB", "ϒ_G", "•REG!O•", "Dominus™`", "Ġñøşïş", "_SţõŗmŔäïdēŗ_", ":::MaxHook:::", "josevnzl", "عـبـغـش31DZ", "ቔƥµŧɕhêŘቔ", "OoöõpsyyyWoLFy", "«MAX»...", "Vdehke", "badi_4", "#FATİHSULTAN#HAN", "~•CHARLS~•", "神秘紅", "hamza£hegazy", "DiMPeR2.0", "Riad", "ArturAlexiy", "®Goodboy®", "†•Dark•Horse•†", "tsopanakos", "kang~tahu", "Alfonso....*_*", "DARKNESS_^", "002 سرراف", "..Erik..", "SHOGUNsrb", "不愛水的魚～"]
+    for p in ew_1011_2: october_historical_logs.append({"Event": "Elite Wars (Battle 2)", "Date": "2026-10-11", "Player": p, "Status": "Not Entered"})
 
-    # Oct 16 - Realm Invasion (22 missed)
-    ri_1016_missed = [
-        "( ミ BEAR 彡 )", "¿?¿SaVi¿?¿", "▪■CH£CH£■▪", "Twatapotomous", "GRO↑نطو", "AndresEled", "Δpredator®", "§Grutovsky§",
-        "Ġñøşïş", ":::MaxHook:::", "Maldit@!", "Alfonso....*_*", "002 سرراف", "susanstorms", "*Skynet*", "عـبـغـش31DZ",
-        "Adrián@Arg.", "神秘紅", "†•Dark•Horse•†", "_Qahtan_", "Riad", "tsopanakos"
-    ]
-    for p in ri_1016_missed:
-        october_historical_logs.append({"Event": "Realm Invasion", "Date": "2026-10-16", "Player": p, "Status": "Not Entered"})
+    ri_1016 = ["( ミ BEAR 彡 )", "¿?¿SaVi¿?¿", "▪■CH£CH£■▪", "Twatapotomous", "GRO↑نطو", "AndresEled", "Δpredator®", "§Grutovsky§", "Ġñøşïş", ":::MaxHook:::", "Maldit@!", "Alfonso....*_*", "002 سرراف", "susanstorms", "*Skynet*", "عـبـغـش31DZ", "Adrián@Arg.", "神秘紅", "†•Dark•Horse•†", "_Qahtan_", "Riad", "tsopanakos"]
+    for p in ri_1016: october_historical_logs.append({"Event": "Realm Invasion", "Date": "2026-10-16", "Player": p, "Status": "Not Entered"})
 
-    # Oct 18 - Elite Wars (28 missed)
-    ew_1018_missed = [
-        "▪■CH£CH£■▪", "Twatapotomous", "¿?¿SaVi¿?¿", "|~*HEIMDALL*~|", "GRO↑نطو", "( ミ BEAR 彡 )", "Maldit@!", "ϒ_G",
-        "卄 モ .爪爪爪.", "Vdehke", "不愛水的魚～", "†•Dark•Horse•†", "®Goodboy®", "~•CHARLS~•", "OoöõpsyyyWoLFy", "_Qahtan_",
-        "susanstorms", "*Skynet*", "kang~tahu", "Alfonso....*_*", "hamza£hegazy", "ቔƥµŧɕhêŘቔ", "ArturAlexiy", "SHOGUNsrb",
-        "josevnzl", "عـبـغـش31DZ", "神秘紅", "DARKNESS_^"
-    ]
-    for p in ew_1018_missed:
-        october_historical_logs.append({"Event": "Elite Wars", "Date": "2026-10-18", "Player": p, "Status": "Not Entered"})
+    ew_1018 = ["▪■CH£CH£■▪", "Twatapotomous", "¿?¿SaVi¿?¿", "|~*HEIMDALL*~|", "GRO↑نطو", "( ミ BEAR 彡 )", "Maldit@!", "ϒ_G", "卄 モ .爪爪爪.", "Vdehke", "不愛水的魚～", "†•Dark•Horse•†", "®Goodboy®", "~•CHARLS~•", "OoöõpsyyyWoLFy", "_Qahtan_", "susanstorms", "*Skynet*", "kang~tahu", "Alfonso....*_*", "hamza£hegazy", "ቔƥµŧɕhêŘቔ", "ArturAlexiy", "SHOGUNsrb", "josevnzl", "عـبـغـش31DZ", "神秘紅", "DARKNESS_^"]
+    for p in ew_1018: october_historical_logs.append({"Event": "Elite Wars", "Date": "2026-10-18", "Player": p, "Status": "Not Entered"})
 
     st.session_state.attendance_records = october_historical_logs
 
 # ---------------------------------------------------------
 # 3. NAVIGATION SIDEBAR
 # ---------------------------------------------------------
-page = st.sidebar.selectbox("Navigation", [
+st.sidebar.markdown("### 📌 Navigation")
+page = st.sidebar.radio("Go to:", [
     "Player Profiles", 
-    "Upload Event Screenshots", 
     "Master Roster & Status", 
     "Alliance Overview & Stats", 
-    "Event Management"
+    "Upload Event Screenshots", 
+    "Admin / Roster Edits"
 ])
 
 # ---------------------------------------------------------
-# PAGE 1: PLAYER PROFILES & INDIVIDUAL HISTORY
+# PAGE 1: PLAYER PROFILES (STRICTLY VIEW-ONLY, NO KEYBOARD)
 # ---------------------------------------------------------
 if page == "Player Profiles":
     st.header("👤 Player Profile & Attendance History")
+    st.markdown("Tap any member below to view their complete attendance history and Battle Power trends.")
     
-    player_list = sorted(st.session_state.roster_df["Player Name"].unique())
-    selected_player = st.selectbox("Select Player", player_list, key="profile_select")
+    # Tap-friendly expanders by Rank (No keyboard text input needed!)
+    with st.expander("🔍 Tap to Select Alliance Member by Rank"):
+        ranks = ["Alliance Leader", "Deputy", "Officer", "Elite", "Member"]
+        for r in ranks:
+            st.markdown(f"**{r}s:**")
+            members_in_rank = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == r]["Player Name"].tolist()
+            
+            # Display buttons in a mobile-friendly grid
+            cols = st.columns(3)
+            for idx, p_name in enumerate(members_in_rank):
+                if cols[idx % 3].button(p_name, key=f"btn_{p_name}"):
+                    st.session_state.selected_player_name = p_name
+
+    selected_player = st.session_state.selected_player_name
+    st.markdown(f"### Current Profile: **{selected_player}**")
     
     player_row = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == selected_player].iloc[0]
     
-    # Calculate Attendance Metrics for this player
-    all_events = [
-        ("Elite Wars", "2026-10-04"),
-        ("Elite Wars", "2026-10-07"),
-        ("Fortress War", "2026-10-08"),
-        ("Elite Wars (Battle 1)", "2026-10-11"),
-        ("Elite Wars (Battle 2)", "2026-10-11"),
-        ("Realm Invasion", "2026-10-16"),
-        ("Elite Wars", "2026-10-18")
-    ]
-    total_tracked_events = len(all_events)
-    
-    # Filter logs for selected player
+    all_events_count = 7
     player_misses = [r for r in st.session_state.attendance_records if r["Player"] == selected_player]
     missed_count = len(player_misses)
-    attended_count = total_tracked_events - missed_count
-    attendance_pct = (attended_count / total_tracked_events) * 100 if total_tracked_events > 0 else 100.0
+    attended_count = all_events_count - missed_count
+    attendance_pct = (attended_count / all_events_count) * 100.0 if all_events_count > 0 else 100.0
     
-    # High-Level Metrics
+    # Read-Only Metrics
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Alliance Rank", player_row["Alliance Rank"])
-    c2.metric("Events Attended", f"{attended_count} / {total_tracked_events}")
+    c2.metric("Events Attended", f"{attended_count} / {all_events_count}")
     c3.metric("Attendance Rate", f"{attendance_pct:.1f}%")
     c4.metric("Member Status", player_row["Status"])
     
@@ -196,11 +149,35 @@ if page == "Player Profiles":
     st.line_chart(bp_data.set_index("Date"))
 
 # ---------------------------------------------------------
-# PAGE 2: UPLOAD EVENT SCREENSHOTS
+# PAGE 2: MASTER ROSTER (READ-ONLY)
+# ---------------------------------------------------------
+elif page == "Master Roster & Status":
+    st.header("👥 RIP Master Roster (98 Members)")
+    st.markdown("This list is strictly read-only and formatted for mobile viewing.")
+    
+    st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
+
+# ---------------------------------------------------------
+# PAGE 3: ALLIANCE OVERVIEW & STATS (READ-ONLY)
+# ---------------------------------------------------------
+elif page == "Alliance Overview & Stats":
+    st.header("📊 Alliance Participation Overview")
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Roster Members", len(st.session_state.roster_df))
+    c2.metric("Tracked Events (October)", "7")
+    c3.metric("Total Logged Entries", len(st.session_state.attendance_records))
+    
+    st.markdown("---")
+    st.subheader("📋 Complete Event Log Audit")
+    if st.session_state.attendance_records:
+        st.dataframe(pd.DataFrame(st.session_state.attendance_records), use_container_width=True, hide_index=True)
+
+# ---------------------------------------------------------
+# PAGE 4: UPLOAD SCREENSHOTS (FOR DEPUTIES)
 # ---------------------------------------------------------
 elif page == "Upload Event Screenshots":
-    st.header("📸 Multi-Screenshot Attendance Uploader")
-    st.markdown("Upload event screenshots. OCR will automatically extract player names and log attendance.")
+    st.header("📸 Screenshot Attendance Uploader")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -239,66 +216,27 @@ elif page == "Upload Event Screenshots":
                 st.success(f"Logged {len(detected_names)} entries for {selected_event} ({event_date})!")
 
 # ---------------------------------------------------------
-# PAGE 3: MASTER ROSTER & PROTECTED MANAGEMENT
+# PAGE 5: ADMIN & ROSTER EDITS (CONTAINED KEYBOARD INPUT)
 # ---------------------------------------------------------
-elif page == "Master Roster & Status":
-    st.header("👥 RIP Master Roster (Read-Only View)")
-    st.markdown("This list is locked for viewing to prevent accidental modifications.")
-    
-    # Display non-editable table
-    st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
-    
-    st.markdown("---")
-    st.subheader("⚙️ Roster Updates & Corrections")
-    st.info("Use this form to rename a player or change their active status. This prevents accidental edits.")
+elif page == "Admin / Roster Edits":
+    st.header("⚙️ Admin & Roster Edits")
+    st.info("Keyboard inputs are restricted to this page to keep all other viewing pages mobile-friendly.")
     
     with st.form("roster_update_form"):
         target_player = st.selectbox("Select Player to Update", sorted(st.session_state.roster_df["Player Name"].unique()))
-        new_name = st.text_input("New Name (Leave blank if keeping current name)")
+        new_name = st.text_input("New Name (Leave blank to keep current)")
         new_status = st.selectbox("Status", ["Active", "Inactive"])
         
         submit_update = st.form_submit_button("Confirm Roster Update")
         
         if submit_update:
             idx = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == target_player].index[0]
-            
-            # Update name if provided
             if new_name and new_name.strip() != "":
                 st.session_state.roster_df.at[idx, "Player Name"] = new_name.strip()
-                # Update name in historical logs
                 for log in st.session_state.attendance_records:
                     if log["Player"] == target_player:
                         log["Player"] = new_name.strip()
-                st.success(f"Renamed '{target_player}' to '{new_name.strip()}' across roster and event logs!")
+                st.success(f"Renamed '{target_player}' to '{new_name.strip()}'!")
             
-            # Update status
             st.session_state.roster_df.at[idx, "Status"] = new_status
             st.success(f"Updated status for '{target_player}' to {new_status}.")
-
-# ---------------------------------------------------------
-# PAGE 4: OVERVIEW & AUDIT LOGS
-# ---------------------------------------------------------
-elif page == "Alliance Overview & Stats":
-    st.header("📊 Alliance Participation Overview")
-    
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Roster Members", len(st.session_state.roster_df))
-    c2.metric("Tracked Events (October)", "7")
-    c3.metric("Total Logged Entries", len(st.session_state.attendance_records))
-    
-    st.markdown("---")
-    st.subheader("📋 Complete Event Log Audit")
-    if st.session_state.attendance_records:
-        st.dataframe(pd.DataFrame(st.session_state.attendance_records), use_container_width=True, hide_index=True)
-
-# ---------------------------------------------------------
-# PAGE 5: EVENT TYPES MANAGEMENT
-# ---------------------------------------------------------
-elif page == "Event Management":
-    st.header("⚙️ Custom Event Management")
-    new_ev = st.text_input("Add New Event Type (e.g. Sanguine Siege)")
-    if st.button("Add Event"):
-        if new_ev and new_ev not in st.session_state.events_list:
-            st.session_state.events_list.append(new_ev)
-            st.success(f"Added '{new_ev}' to event list!")
-    st.write("Active Events:", st.session_state.events_list)
