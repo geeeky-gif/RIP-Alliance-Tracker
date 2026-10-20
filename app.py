@@ -113,7 +113,7 @@ if 'attendance_records' not in st.session_state:
     st.session_state.attendance_records = october_historical_logs
 
 # ---------------------------------------------------------
-# 3. NAVIGATION SIDEBAR (REDUCED PAGES)
+# 3. NAVIGATION SIDEBAR
 # ---------------------------------------------------------
 st.sidebar.markdown("### 📌 Navigation")
 page = st.sidebar.radio("Go to:", [
@@ -222,69 +222,88 @@ elif page == "Alliance Overview & Stats":
         st.dataframe(pd.DataFrame(st.session_state.attendance_records), use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# PAGE 3: UPLOAD SCREENSHOTS (FOR DEPUTIES)
+# PAGE 3: UPLOAD SCREENSHOTS (PASSWORD PROTECTED)
 # ---------------------------------------------------------
 elif page == "Upload Event Screenshots":
     st.header("📸 Screenshot Attendance Uploader")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        selected_event = st.selectbox("Select Event", st.session_state.events_list, key="upload_event")
-    with col2:
-        event_date = st.date_input("Battle Date")
+    # Simple shared password protection
+    passcode = st.text_input("Enter Leadership Passcode to Unlock Uploader:", type="password")
+    
+    if passcode == "rip123":  # You can change this shared password to whatever you like!
+        st.success("Passcode accepted!")
         
-    entry_mode = st.radio("Logging Mode:", ["Log Non-Attendants ('Not Entered')", "Log Attendants ('Battlers')"], horizontal=True)
-    
-    uploaded_files = st.file_uploader("Choose screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
-    
-    if uploaded_files:
-        st.write(f"📁 **{len(uploaded_files)} screenshot(s) uploaded.**")
-        for i, file in enumerate(uploaded_files):
-            with st.expander(f"Preview Screenshot {i+1}: {file.name}"):
-                img = Image.open(file)
-                st.image(img, use_column_width=True)
-                
-        if st.button("Process Screenshots & Save Records"):
-            with st.spinner("Running OCR..."):
-                detected_names = []
-                for file in uploaded_files:
+        col1, col2 = st.columns(2)
+        with col1:
+            selected_event = st.selectbox("Select Event", st.session_state.events_list, key="upload_event")
+        with col2:
+            event_date = st.date_input("Battle Date")
+            
+        entry_mode = st.radio("Logging Mode:", ["Log Non-Attendants ('Not Entered')", "Log Attendants ('Battlers')"], horizontal=True)
+        
+        uploaded_files = st.file_uploader("Choose screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+        
+        if uploaded_files:
+            st.write(f"📁 **{len(uploaded_files)} screenshot(s) uploaded.**")
+            for i, file in enumerate(uploaded_files):
+                with st.expander(f"Preview Screenshot {i+1}: {file.name}"):
                     img = Image.open(file)
-                    text = pytesseract.image_to_string(img)
-                    for name in st.session_state.roster_df["Player Name"]:
-                        if name in text and name not in detected_names:
-                            detected_names.append(name)
-                
-                for name in detected_names:
-                    st.session_state.attendance_records.append({
-                        "Event": selected_event,
-                        "Date": str(event_date),
-                        "Player": name,
-                        "Status": "Not Entered" if "Non-Attendants" in entry_mode else "Entered"
-                    })
-                st.success(f"Logged {len(detected_names)} entries for {selected_event} ({event_date})!")
+                    st.image(img, use_column_width=True)
+                    
+            if st.button("Process Screenshots & Save Records"):
+                with st.spinner("Running OCR..."):
+                    detected_names = []
+                    for file in uploaded_files:
+                        img = Image.open(file)
+                        text = pytesseract.image_to_string(img)
+                        for name in st.session_state.roster_df["Player Name"]:
+                            if name in text and name not in detected_names:
+                                detected_names.append(name)
+                    
+                    for name in detected_names:
+                        st.session_state.attendance_records.append({
+                            "Event": selected_event,
+                            "Date": str(event_date),
+                            "Player": name,
+                            "Status": "Not Entered" if "Non-Attendants" in entry_mode else "Entered"
+                        })
+                    st.success(f"Logged {len(detected_names)} entries for {selected_event} ({event_date})!")
+    elif passcode != "":
+        st.error("Incorrect passcode.")
+    else:
+        st.info("🔒 Please enter the shared leadership passcode to access the screenshot uploader.")
 
 # ---------------------------------------------------------
-# PAGE 4: ADMIN / ROSTER EDITS
+# PAGE 4: ADMIN / ROSTER EDITS (PASSWORD PROTECTED)
 # ---------------------------------------------------------
 elif page == "Admin / Roster Edits":
     st.header("⚙️ Admin & Roster Edits")
-    st.info("Form fields requiring typing are strictly contained to this admin page.")
     
-    with st.form("roster_update_form"):
-        target_player = st.selectbox("Select Player to Update", sorted(st.session_state.roster_df["Player Name"].unique()))
-        new_name = st.text_input("New Name (Leave blank to keep current)")
-        new_status = st.selectbox("Status", ["Active", "Inactive"])
+    # Simple shared password protection
+    passcode = st.text_input("Enter Leadership Passcode to Unlock Admin Tools:", type="password", key="admin_pass")
+    
+    if passcode == "rip123":  # Same shared password
+        st.success("Passcode accepted!")
         
-        submit_update = st.form_submit_button("Confirm Roster Update")
-        
-        if submit_update:
-            idx = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == target_player].index[0]
-            if new_name and new_name.strip() != "":
-                st.session_state.roster_df.at[idx, "Player Name"] = new_name.strip()
-                for log in st.session_state.attendance_records:
-                    if log["Player"] == target_player:
-                        log["Player"] = new_name.strip()
-                st.success(f"Renamed '{target_player}' to '{new_name.strip()}'!")
+        with st.form("roster_update_form"):
+            target_player = st.selectbox("Select Player to Update", sorted(st.session_state.roster_df["Player Name"].unique()))
+            new_name = st.text_input("New Name (Leave blank to keep current)")
+            new_status = st.selectbox("Status", ["Active", "Inactive"])
             
-            st.session_state.roster_df.at[idx, "Status"] = new_status
-            st.success(f"Updated status for '{target_player}' to {new_status}.")
+            submit_update = st.form_submit_button("Confirm Roster Update")
+            
+            if submit_update:
+                idx = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == target_player].index[0]
+                if new_name and new_name.strip() != "":
+                    st.session_state.roster_df.at[idx, "Player Name"] = new_name.strip()
+                    for log in st.session_state.attendance_records:
+                        if log["Player"] == target_player:
+                            log["Player"] = new_name.strip()
+                    st.success(f"Renamed '{target_player}' to '{new_name.strip()}'!")
+                
+                st.session_state.roster_df.at[idx, "Status"] = new_status
+                st.success(f"Updated status for '{target_player}' to {new_status}.")
+    elif passcode != "":
+        st.error("Incorrect passcode.")
+    else:
+        st.info("🔒 Please enter the shared leadership passcode to access admin edits.")
