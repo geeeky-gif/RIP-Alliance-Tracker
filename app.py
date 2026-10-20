@@ -70,7 +70,7 @@ st.markdown(
 )
 
 # ---------------------------------------------------------
-# FUZZY MATCHING & OCR PARSER HELPERS
+# FUZZY MATCHING & TARGETED OCR PARSER HELPERS
 # ---------------------------------------------------------
 def clean_text(text):
     return "".join(c for c in text if c.isalnum()).lower()
@@ -106,14 +106,14 @@ def extract_number(text):
 
 def parse_player_info_screenshot(ocr_text, roster_names):
     """
-    Parses a 'Player Info' screenshot based on the exact layout:
+    Targeted parser matching labels next to/following values:
     - Player name near the top
     - Castle level near 'lv.'
     - Lord Level near 'lv.'
     - Individual Reputation
     - Military Rank
     - Power Ranking
-    - Battle power
+    - Battle Power
     - Kills and Losses
     """
     lines = [line.strip() for line in ocr_text.split('\n') if line.strip()]
@@ -129,14 +129,13 @@ def parse_player_info_screenshot(ocr_text, roster_names):
         "Losses": 0
     }
     
-    # 1. Identify player name (check top lines against roster using fuzzy match)
+    # 1. Identify player name from top lines
     for line in lines[:6]:
         match, score = find_best_roster_match(line, roster_names, cutoff=0.65)
         if match:
             parsed_data["Player Name"] = match
             break
             
-    # If name wasn't found in top lines, scan entire text
     if not parsed_data["Player Name"]:
         for line in lines:
             match, score = find_best_roster_match(line, roster_names, cutoff=0.75)
@@ -144,11 +143,11 @@ def parse_player_info_screenshot(ocr_text, roster_names):
                 parsed_data["Player Name"] = match
                 break
 
-    # 2. Parse stats line by line or keyword search
+    # 2. Parse stats by looking for labels and adjacent numbers/text
     for i, line in enumerate(lines):
         line_lower = line.lower()
         
-        # Castle Level or Lord Level with "lv."
+        # Castle Level or Lord Level near "lv."
         if "lv." in line_lower:
             num = extract_number(line)
             if num > 0:
@@ -156,44 +155,60 @@ def parse_player_info_screenshot(ocr_text, roster_names):
                     parsed_data["Castle Level"] = num
                 elif "lord" in line_lower or parsed_data["Castle Level"] > 0:
                     parsed_data["Lord Level"] = num
+        
+        # Fallback castle level check if "lv" is separate or missing dot
+        if "castle" in line_lower:
+            num = extract_number(line)
+            if num > 0:
+                parsed_data["Castle Level"] = num
 
         # Individual Reputation
         if "reputation" in line_lower or "individual" in line_lower:
-            parsed_data["Individual Reputation"] = extract_number(line)
-            # If number is on the next line
-            if parsed_data["Individual Reputation"] == 0 and i + 1 < len(lines):
+            val = extract_number(line)
+            if val > 0:
+                parsed_data["Individual Reputation"] = val
+            elif i + 1 < len(lines):
                 parsed_data["Individual Reputation"] = extract_number(lines[i+1])
 
-        # Military Rank
-        if "military rank" in line_lower or ("rank" in line_lower and "power" not in line_lower):
+        # Military Rank (Ensuring it doesn't grab Power Ranking)
+        if "military rank" in line_lower or ("rank" in line_lower and "power" not in line_lower and "position" not in line_lower):
             parts = line.split(":")
-            if len(parts) > 1:
+            if len(parts) > 1 and parts[1].strip():
                 parsed_data["Military Rank"] = parts[1].strip()
             elif i + 1 < len(lines):
                 parsed_data["Military Rank"] = lines[i+1].strip()
 
         # Power Ranking
-        if "power ranking" in line_lower:
-            parsed_data["Power Ranking"] = extract_number(line)
-            if parsed_data["Power Ranking"] == 0 and i + 1 < len(lines):
+        if "power ranking" in line_lower or "power rank" in line_lower:
+            val = extract_number(line)
+            if val > 0:
+                parsed_data["Power Ranking"] = val
+            elif i + 1 < len(lines):
                 parsed_data["Power Ranking"] = extract_number(lines[i+1])
 
         # Battle Power
-        if "battle power" in line_lower or line_lower == "power":
-            parsed_data["Battle Power"] = extract_number(line)
-            if parsed_data["Battle Power"] == 0 and i + 1 < len(lines):
+        if "battle power" in line_lower or (line_lower == "power" and "ranking" not in line_lower):
+            val = extract_number(line)
+            if val > 0:
+                parsed_data["Battle Power"] = val
+            elif i + 1 < len(lines):
                 parsed_data["Battle Power"] = extract_number(lines[i+1])
 
         # Kills and Losses
         if "kills" in line_lower:
             parsed_data["Kills"] = extract_number(line)
+            if parsed_data["Kills"] == 0 and i + 1 < len(lines):
+                parsed_data["Kills"] = extract_number(lines[i+1])
+                
         if "losses" in line_lower:
             parsed_data["Losses"] = extract_number(line)
+            if parsed_data["Losses"] == 0 and i + 1 < len(lines):
+                parsed_data["Losses"] = extract_number(lines[i+1])
 
     return parsed_data
 
 # ---------------------------------------------------------
-# 1. MASTER ROSTER INITIALIZATION
+# 1. MASTER ROSTER INITIALIZATION (PERSISTENT SESSION STATE)
 # ---------------------------------------------------------
 if 'roster_df' not in st.session_state:
     st.session_state.roster_df = pd.DataFrame({
@@ -249,6 +264,7 @@ if 'roster_df' not in st.session_state:
         "Castle Level": [0] * 98,
         "Lord Level": [0] * 98,
         "Individual Reputation": [0] * 98,
+        "Power Ranking": [0] * 98,
         "Military Rank": [""] * 98,
         "Status": ["Active"] * 98
     })
@@ -366,23 +382,28 @@ if page == "Player Profiles":
     kills_disp = f"{player_row['Kills']:,}" if player_row['Kills'] > 0 else "—"
     losses_disp = f"{player_row['Losses']:,}" if player_row['Losses'] > 0 else "—"
     rep_disp = f"{player_row['Individual Reputation']:,}" if player_row['Individual Reputation'] > 0 else "—"
+    power_rank_disp = f"{player_row['Power Ranking']:,}" if player_row['Power Ranking'] > 0 else "—"
     mil_disp = player_row['Military Rank'] if player_row['Military Rank'] != "" else "—"
 
+    # Row 1 Metrics
     r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
     r1_c1.metric("Rank", player_row["Alliance Rank"])
     r1_c2.metric("Battle Power", bp_disp)
     r1_c3.metric("Castle Lvl", castle_disp)
     r1_c4.metric("Lord Lvl", lord_disp)
     
+    # Row 2 Metrics (Includes dedicated Power Ranking & Military Rank)
     r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
     r2_c1.metric("Kills", kills_disp)
     r2_c2.metric("Losses", losses_disp)
-    r2_c3.metric("Reputation", rep_disp)
+    r2_c3.metric("Power Ranking", power_rank_disp)
     r2_c4.metric("Military Rank", mil_disp)
 
-    r3_c1, r3_c2 = st.columns(2)
-    r3_c1.metric("Events Attended", f"{attended_count} / {all_events_count} ({attendance_pct:.1f}%)")
-    r3_c2.metric("Status", player_row["Status"])
+    # Row 3 Metrics
+    r3_c1, r3_c2, r3_c3 = st.columns(3)
+    r3_c1.metric("Reputation", rep_disp)
+    r3_c2.metric("Events Attended", f"{attended_count} / {all_events_count} ({attendance_pct:.1f}%)")
+    r3_c3.metric("Status", player_row["Status"])
     
     st.markdown("---")
     st.subheader("📋 Missed Events Log")
@@ -443,7 +464,7 @@ elif page == "Upload Event Screenshots":
             entry_mode = st.radio("Logging Mode:", ["Log Non-Attendants ('Not Entered')", "Log Attendants ('Battlers')"], horizontal=True)
         else:
             scan_date = st.date_input("Stat Scan Date")
-            st.markdown("💡 *Tip: You can select up to **20 screenshots at once**. The OCR parser will read Castle Level, Lord Level, Reputation, Military Rank, BP, Kills, and Losses automatically.*")
+            st.markdown("💡 *Tip: You can select up to **20 screenshots at once**. The OCR parser will read Castle Level, Lord Level, Reputation, Military Rank, Power Ranking, BP, Kills, and Losses automatically.*")
 
         uploaded_files = st.file_uploader("Choose screenshot(s)... (Max 20 files)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         
@@ -467,7 +488,6 @@ elif page == "Upload Event Screenshots":
                             text = pytesseract.image_to_string(img)
                             
                             if "Attendance" in upload_type:
-                                # Attendance matching
                                 for name in roster_names:
                                     if name in text:
                                         st.session_state.attendance_records.append({
@@ -478,14 +498,12 @@ elif page == "Upload Event Screenshots":
                                         })
                                         success_count += 1
                             else:
-                                # Player Info stats parsing
                                 p_data = parse_player_info_screenshot(text, roster_names)
                                 p_name = p_data["Player Name"]
                                 
                                 if p_name:
                                     idx = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == p_name].index[0]
                                     
-                                    # Update stats if extracted values are greater than 0
                                     if p_data["Battle Power"] > 0:
                                         st.session_state.roster_df.at[idx, "Battle Power"] = p_data["Battle Power"]
                                         if p_name not in st.session_state.bp_history:
@@ -500,6 +518,8 @@ elif page == "Upload Event Screenshots":
                                         st.session_state.roster_df.at[idx, "Lord Level"] = p_data["Lord Level"]
                                     if p_data["Individual Reputation"] > 0:
                                         st.session_state.roster_df.at[idx, "Individual Reputation"] = p_data["Individual Reputation"]
+                                    if p_data["Power Ranking"] > 0:
+                                        st.session_state.roster_df.at[idx, "Power Ranking"] = p_data["Power Ranking"]
                                     if p_data["Military Rank"] != "":
                                         st.session_state.roster_df.at[idx, "Military Rank"] = p_data["Military Rank"]
                                     if p_data["Kills"] > 0:
@@ -551,8 +571,10 @@ elif page == "Admin / Roster Edits":
             new_lord = c5.number_input("Lord Level", value=int(current_row["Lord Level"]), step=1)
             new_rep = c6.number_input("Individual Reputation", value=int(current_row["Individual Reputation"]), step=10000)
             
+            c7, c8 = st.columns(2)
+            new_power_rank = c7.number_input("Power Ranking", value=int(current_row["Power Ranking"]), step=1)
             current_mil = current_row["Military Rank"] if current_row["Military Rank"] != "" else ""
-            new_mil_rank = st.text_input("Military Rank", value=current_mil)
+            new_mil_rank = c8.text_input("Military Rank", value=current_mil)
             
             scan_date_input = st.date_input("Record Scan Date for Trend History")
             
@@ -576,6 +598,7 @@ elif page == "Admin / Roster Edits":
                 st.session_state.roster_df.at[idx, "Losses"] = new_losses
                 st.session_state.roster_df.at[idx, "Lord Level"] = new_lord
                 st.session_state.roster_df.at[idx, "Individual Reputation"] = new_rep
+                st.session_state.roster_df.at[idx, "Power Ranking"] = new_power_rank
                 st.session_state.roster_df.at[idx, "Military Rank"] = new_mil_rank
                 
                 if target_player not in st.session_state.bp_history:
