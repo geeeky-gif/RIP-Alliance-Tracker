@@ -47,9 +47,11 @@ if 'roster_df' not in st.session_state:
         "Status": ["Active"] * 98
     })
 
-# Initialize Session State for Selected Player in Profiles (Mobile Button friendly)
 if 'selected_player_name' not in st.session_state:
     st.session_state.selected_player_name = "•~SoulTaker~•"
+
+if 'active_rank_tab' not in st.session_state:
+    st.session_state.active_rank_tab = "Alliance Leader"
 
 # ---------------------------------------------------------
 # 2. INITIALIZE PRE-LOGGED OCTOBER EVENTS
@@ -95,27 +97,52 @@ page = st.sidebar.radio("Go to:", [
 ])
 
 # ---------------------------------------------------------
-# PAGE 1: PLAYER PROFILES (STRICTLY VIEW-ONLY, NO KEYBOARD)
+# PAGE 1: PLAYER PROFILES (100% TOUCH CARD BUTTONS, NO INPUT BARS)
 # ---------------------------------------------------------
 if page == "Player Profiles":
     st.header("👤 Player Profile & Attendance History")
-    st.markdown("Tap any member below to view their complete attendance history and Battle Power trends.")
+    st.markdown("Tap any rank button below to list members, then tap a member to view their profile.")
     
-    # Tap-friendly expanders by Rank (No keyboard text input needed!)
-    with st.expander("🔍 Tap to Select Alliance Member by Rank"):
-        ranks = ["Alliance Leader", "Deputy", "Officer", "Elite", "Member"]
-        for r in ranks:
-            st.markdown(f"**{r}s:**")
-            members_in_rank = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == r]["Player Name"].tolist()
-            
-            # Display buttons in a mobile-friendly grid
-            cols = st.columns(3)
-            for idx, p_name in enumerate(members_in_rank):
-                if cols[idx % 3].button(p_name, key=f"btn_{p_name}"):
-                    st.session_state.selected_player_name = p_name
+    # Touch Pills for Rank Selection (Never summons keyboard!)
+    rank_cols = st.columns(5)
+    ranks = ["Leader/Deputy", "Officer", "Elite", "Member A-M", "Member N-Z"]
+    
+    if rank_cols[0].button("👑 Leaders", use_container_width=True):
+        st.session_state.active_rank_tab = "Leader"
+    if rank_cols[1].button("🛡️ Officers", use_container_width=True):
+        st.session_state.active_rank_tab = "Officer"
+    if rank_cols[2].button("⚔️ Elites", use_container_width=True):
+        st.session_state.active_rank_tab = "Elite"
+    if rank_cols[3].button("📜 Members A-M", use_container_width=True):
+        st.session_state.active_rank_tab = "Member_AM"
+    if rank_cols[4].button("📜 Members N-Z", use_container_width=True):
+        st.session_state.active_rank_tab = "Member_NZ"
+
+    # Filter members based on selected Touch Pill
+    active_tab = st.session_state.active_rank_tab
+    if active_tab == "Leader":
+        filtered_members = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"].isin(["Alliance Leader", "Deputy"])]["Player Name"].tolist()
+    elif active_tab == "Officer":
+        filtered_members = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Officer"]["Player Name"].tolist()
+    elif active_tab == "Elite":
+        filtered_members = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Elite"]["Player Name"].tolist()
+    elif active_tab == "Member_AM":
+        all_members = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Member"]["Player Name"].tolist()
+        filtered_members = [m for m in all_members if m[0].upper() <= 'M' or not m[0].isalpha()]
+    else:
+        all_members = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Member"]["Player Name"].tolist()
+        filtered_members = [m for m in all_members if m[0].upper() > 'M' and m[0].isalpha()]
+
+    # Render Member Selection Cards
+    st.markdown("#### Select Player Card:")
+    grid_cols = st.columns(2)
+    for idx, p_name in enumerate(filtered_members):
+        if grid_cols[idx % 2].button(f"👤 {p_name}", key=f"card_{p_name}", use_container_width=True):
+            st.session_state.selected_player_name = p_name
 
     selected_player = st.session_state.selected_player_name
-    st.markdown(f"### Current Profile: **{selected_player}**")
+    st.markdown("---")
+    st.markdown(f"## 📊 Selected Profile: **{selected_player}**")
     
     player_row = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == selected_player].iloc[0]
     
@@ -132,14 +159,12 @@ if page == "Player Profiles":
     c3.metric("Attendance Rate", f"{attendance_pct:.1f}%")
     c4.metric("Member Status", player_row["Status"])
     
-    st.markdown("---")
-    
     st.subheader("📋 Missed Events Log")
     if player_misses:
         missed_df = pd.DataFrame(player_misses)[["Event", "Date", "Status"]]
         st.dataframe(missed_df, use_container_width=True, hide_index=True)
     else:
-        st.success("🌟 Perfect Attendance! This player entered all 7 tracked October events.")
+        st.success("🌟 Perfect Attendance! Entered all 7 tracked October events.")
         
     st.subheader("📈 Battle Power Trend")
     bp_data = pd.DataFrame({
@@ -153,8 +178,6 @@ if page == "Player Profiles":
 # ---------------------------------------------------------
 elif page == "Master Roster & Status":
     st.header("👥 RIP Master Roster (98 Members)")
-    st.markdown("This list is strictly read-only and formatted for mobile viewing.")
-    
     st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
@@ -216,11 +239,11 @@ elif page == "Upload Event Screenshots":
                 st.success(f"Logged {len(detected_names)} entries for {selected_event} ({event_date})!")
 
 # ---------------------------------------------------------
-# PAGE 5: ADMIN & ROSTER EDITS (CONTAINED KEYBOARD INPUT)
+# PAGE 5: ADMIN / ROSTER EDITS
 # ---------------------------------------------------------
 elif page == "Admin / Roster Edits":
     st.header("⚙️ Admin & Roster Edits")
-    st.info("Keyboard inputs are restricted to this page to keep all other viewing pages mobile-friendly.")
+    st.info("Form fields requiring typing are strictly contained to this admin page.")
     
     with st.form("roster_update_form"):
         target_player = st.selectbox("Select Player to Update", sorted(st.session_state.roster_df["Player Name"].unique()))
