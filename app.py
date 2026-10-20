@@ -270,3 +270,171 @@ if page == "Player Profiles":
     st.subheader("📈 Battle Power Trend History")
     p_history = st.session_state.bp_history.get(selected_player, [])
     if p_history:
+        history_df = pd.DataFrame(p_history)
+        st.line_chart(history_df.set_index("Date"))
+    else:
+        st.info("No historical BP scans recorded yet. Upload profile screenshots or update manually to begin tracking trends.")
+
+# ---------------------------------------------------------
+# PAGE 2: ALLIANCE OVERVIEW & STATS
+# ---------------------------------------------------------
+elif page == "Alliance Overview & Stats":
+    st.subheader("📊 Alliance Participation Overview")
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Roster Members", len(st.session_state.roster_df))
+    c2.metric("Tracked Events (October)", "7")
+    c3.metric("Total Logged Entries", len(st.session_state.attendance_records))
+    
+    st.markdown("---")
+    st.subheader("📋 Complete Roster & War Stats Table")
+    st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    st.subheader("📋 Complete Event Log Audit")
+    if st.session_state.attendance_records:
+        st.dataframe(pd.DataFrame(st.session_state.attendance_records), use_container_width=True, hide_index=True)
+
+# ---------------------------------------------------------
+# PAGE 3: UPLOAD SCREENSHOTS
+# ---------------------------------------------------------
+elif page == "Upload Event Screenshots":
+    st.subheader("📸 Bulk Screenshot Uploader")
+    
+    passcode = st.text_input("Enter Leadership Passcode to Unlock Uploader:", type="password")
+    
+    if passcode == "rip123":
+        st.success("Passcode accepted!")
+        
+        upload_type = st.radio("Select Upload Type:", ["Event Attendance (Not Entered / Battlers)", "Player Info / Stats (Bulk OCR Update)"], horizontal=True)
+        
+        if "Attendance" in upload_type:
+            col1, col2 = st.columns(2)
+            with col1:
+                selected_event = st.selectbox("Select Event", st.session_state.events_list, key="upload_event")
+            with col2:
+                event_date = st.date_input("Battle Date")
+                
+            entry_mode = st.radio("Logging Mode:", ["Log Non-Attendants ('Not Entered')", "Log Attendants ('Battlers')"], horizontal=True)
+        else:
+            scan_date = st.date_input("Stat Scan Date")
+            st.markdown("💡 *Tip: You can select up to **20 screenshots at once** to quickly update player stats across your roster.*")
+
+        uploaded_files = st.file_uploader("Choose screenshot(s)... (Max 20 files)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+        
+        if uploaded_files:
+            if len(uploaded_files) > 20:
+                st.warning("⚠️ Please limit batches to 20 screenshots at a time for optimal performance.")
+            else:
+                st.write(f"📁 **{len(uploaded_files)} screenshot(s) ready for processing.**")
+                for i, file in enumerate(uploaded_files):
+                    with st.expander(f"Preview Screenshot {i+1}: {file.name}"):
+                        img = Image.open(file)
+                        st.image(img, use_column_width=True)
+                        
+                if st.button("Process Batch Screenshots"):
+                    with st.spinner("Running OCR across batch..."):
+                        if "Attendance" in upload_type:
+                            detected_names = []
+                            for file in uploaded_files:
+                                img = Image.open(file)
+                                text = pytesseract.image_to_string(img)
+                                for name in st.session_state.roster_df["Player Name"]:
+                                    if name in text and name not in detected_names:
+                                        detected_names.append(name)
+                            
+                            for name in detected_names:
+                                st.session_state.attendance_records.append({
+                                    "Event": selected_event,
+                                    "Date": str(event_date),
+                                    "Player": name,
+                                    "Status": "Not Entered" if "Non-Attendants" in entry_mode else "Entered"
+                                })
+                            st.success(f"Successfully logged {len(detected_names)} attendance entries across {len(uploaded_files)} screenshot(s)!")
+                        else:
+                            matched_count = 0
+                            for file in uploaded_files:
+                                img = Image.open(file)
+                                text = pytesseract.image_to_string(img)
+                                for idx, row in st.session_state.roster_df.iterrows():
+                                    p_name = row["Player Name"]
+                                    if p_name in text:
+                                        matched_count += 1
+                            st.success(f"Processed {len(uploaded_files)} player info screenshots! Cross-referenced and detected {matched_count} member occurrences.")
+    elif passcode != "":
+        st.error("Incorrect passcode.")
+    else:
+        st.info("🔒 Please enter the shared leadership passcode to access the uploader.")
+
+# ---------------------------------------------------------
+# PAGE 4: ADMIN / ROSTER EDITS
+# ---------------------------------------------------------
+elif page == "Admin / Roster Edits":
+    st.subheader("⚙️ Admin & Roster Edits")
+    
+    passcode = st.text_input("Enter Leadership Passcode to Unlock Admin Tools:", type="password", key="admin_pass")
+    
+    if passcode == "rip123":
+        st.success("Passcode accepted!")
+        
+        with st.form("roster_update_form"):
+            target_player = st.selectbox("Select Player to Update", sorted(st.session_state.roster_df["Player Name"].unique()))
+            
+            st.markdown("#### Update Details:")
+            new_name = st.text_input("New Name (Leave blank to keep current)")
+            new_rank = st.selectbox("Alliance Rank", ["Alliance Leader", "Deputy", "Officer", "Elite", "Member"])
+            new_status = st.selectbox("Status", ["Active", "Inactive"])
+            
+            current_row = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == target_player].iloc[0]
+            
+            c1, c2 = st.columns(2)
+            new_bp = c1.number_input("Battle Power", value=int(current_row["Battle Power"]), step=100000)
+            new_castle = c2.number_input("Castle Level", value=int(current_row["Castle Level"]), step=1)
+            
+            c3, c4 = st.columns(2)
+            new_kills = c3.number_input("Kills", value=int(current_row["Kills"]), step=10000)
+            new_losses = c4.number_input("Losses", value=int(current_row["Losses"]), step=1000)
+            
+            c5, c6 = st.columns(2)
+            new_lord = c5.number_input("Lord Level", value=int(current_row["Lord Level"]), step=1)
+            new_rep = c6.number_input("Individual Reputation", value=int(current_row["Individual Reputation"]), step=10000)
+            
+            current_mil = current_row["Military Rank"] if current_row["Military Rank"] != "" else "General"
+            new_mil_rank = st.text_input("Military Rank", value=current_mil)
+            
+            scan_date_input = st.date_input("Record Scan Date for Trend History")
+            
+            submit_update = st.form_submit_button("Save Player Updates")
+            
+            if submit_update:
+                idx = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == target_player].index[0]
+                
+                if new_name and new_name.strip() != "":
+                    st.session_state.roster_df.at[idx, "Player Name"] = new_name.strip()
+                    for log in st.session_state.attendance_records:
+                        if log["Player"] == target_player:
+                            log["Player"] = new_name.strip()
+                    target_player = new_name.strip()
+                
+                st.session_state.roster_df.at[idx, "Alliance Rank"] = new_rank
+                st.session_state.roster_df.at[idx, "Status"] = new_status
+                st.session_state.roster_df.at[idx, "Battle Power"] = new_bp
+                st.session_state.roster_df.at[idx, "Castle Level"] = new_castle
+                st.session_state.roster_df.at[idx, "Kills"] = new_kills
+                st.session_state.roster_df.at[idx, "Losses"] = new_losses
+                st.session_state.roster_df.at[idx, "Lord Level"] = new_lord
+                st.session_state.roster_df.at[idx, "Individual Reputation"] = new_rep
+                st.session_state.roster_df.at[idx, "Military Rank"] = new_mil_rank
+                
+                if target_player not in st.session_state.bp_history:
+                    st.session_state.bp_history[target_player] = []
+                st.session_state.bp_history[target_player].append({
+                    "Date": str(scan_date_input),
+                    "Battle Power": new_bp
+                })
+                
+                st.success(f"Successfully updated profile records and history for {target_player}!")
+    elif passcode != "":
+        st.error("Incorrect passcode.")
+    else:
+        st.info("🔒 Please enter the shared leadership passcode to access admin edits.")
