@@ -71,12 +71,13 @@ st.markdown(
 )
 
 # ---------------------------------------------------------
-# PERSISTENT STORAGE FILE PATHS
+# PERSISTENT STORAGE FILE PATHS & INITIALIZATION
 # ---------------------------------------------------------
 ROSTER_FILE = "roster_data.csv"
+LOCKS_FILE = "field_locks.csv"
 HISTORY_FILE = "bp_history.csv"
 
-# Load or Initialize Master Roster with Permanent Storage
+# Load or Initialize Master Roster
 if 'roster_df' not in st.session_state:
     if os.path.exists(ROSTER_FILE):
         st.session_state.roster_df = pd.read_csv(ROSTER_FILE)
@@ -143,11 +144,41 @@ if 'roster_df' not in st.session_state:
 def save_roster():
     st.session_state.roster_df.to_csv(ROSTER_FILE, index=False)
 
+# Load or Initialize Field Locks (to prevent OCR from overriding manual edits)
+if 'locks_df' not in st.session_state:
+    if os.path.exists(LOCKS_FILE):
+        st.session_state.locks_df = pd.read_csv(LOCKS_FILE)
+    else:
+        st.session_state.locks_df = pd.DataFrame(columns=["Player Name", "Field", "Locked"])
+        st.session_state.locks_df.to_csv(LOCKS_FILE, index=False)
+
+def save_locks():
+    st.session_state.locks_df.to_csv(LOCKS_FILE, index=False)
+
+def is_locked(player, field):
+    match = st.session_state.locks_df[(st.session_state.locks_df["Player Name"] == player) & (st.session_state.locks_df["Field"] == field)]
+    if not match.empty:
+        return bool(match.iloc[0]["Locked"])
+    return False
+
+def set_lock(player, field, locked_state):
+    df = st.session_state.locks_df
+    idx = df[(df["Player Name"] == player) & (df["Field"] == field)].index
+    if not idx.empty:
+        df.at[idx[0], "Locked"] = locked_state
+    else:
+        new_row = pd.DataFrame({"Player Name": [player], "Field": [field], "Locked": [locked_state]})
+        st.session_state.locks_df = pd.concat([df, new_row], ignore_index=True)
+    save_locks()
+
 if 'selected_player_name' not in st.session_state:
     st.session_state.selected_player_name = "•~SoulTaker~•"
 
 if 'active_rank_tab' not in st.session_state:
     st.session_state.active_rank_tab = "Leader"
+
+if 'admin_rank_tab' not in st.session_state:
+    st.session_state.admin_rank_tab = "Leader"
 
 # Load or Initialize BP History
 if 'bp_history' not in st.session_state:
@@ -387,7 +418,7 @@ if page == "Player Profiles":
     losses_disp = f"{player_row['Losses']:,}" if player_row['Losses'] > 0 else "—"
     rep_disp = f"{player_row['Individual Reputation']:,}" if player_row['Individual Reputation'] > 0 else "—"
     power_rank_disp = f"{player_row['Power Ranking']:,}" if player_row['Power Ranking'] > 0 else "—"
-    mil_disp = player_row['Military Rank'] if player_row['Military Rank'] != "" else "—"
+    mil_disp = player_row['Military Rank'] if pd.notna(player_row['Military Rank']) and player_row['Military Rank'] != "" else "—"
 
     r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
     r1_c1.metric("Rank", player_row["Alliance Rank"])
@@ -443,7 +474,7 @@ elif page == "Alliance Overview & Stats":
         st.dataframe(pd.DataFrame(st.session_state.attendance_records), use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# PAGE 3: UPLOAD SCREENSHOTS (PERSISTENT SAVING)
+# PAGE 3: UPLOAD SCREENSHOTS (RESPECTS FIELD LOCKS)
 # ---------------------------------------------------------
 elif page == "Upload Event Screenshots":
     st.subheader("📸 Bulk Screenshot Uploader")
@@ -465,7 +496,7 @@ elif page == "Upload Event Screenshots":
             entry_mode = st.radio("Logging Mode:", ["Log Non-Attendants ('Not Entered')", "Log Attendants ('Battlers')"], horizontal=True)
         else:
             scan_date = st.date_input("Stat Scan Date")
-            st.markdown("💡 *Tip: You can select up to **20 screenshots at once**. The OCR parser will read Castle Level, Lord Level, Reputation, Military Rank, Power Ranking, BP, Kills, and Losses automatically.*")
+            st.markdown("💡 *Tip: Any fields you have locked in the **Admin / Roster Edits** section will be protected and ignored during OCR updates.*")
 
         uploaded_files = st.file_uploader("Choose screenshot(s)... (Max 20 files)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         
@@ -505,7 +536,8 @@ elif page == "Upload Event Screenshots":
                                 if p_name:
                                     idx = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == p_name].index[0]
                                     
-                                    if p_data["Battle Power"] > 0:
+                                    # Only update fields if they are NOT locked by admin
+                                    if p_data["Battle Power"] > 0 and not is_locked(p_name, "Battle Power"):
                                         st.session_state.roster_df.at[idx, "Battle Power"] = p_data["Battle Power"]
                                         if p_name not in st.session_state.bp_history:
                                             st.session_state.bp_history[p_name] = []
@@ -515,24 +547,24 @@ elif page == "Upload Event Screenshots":
                                         })
                                         save_history()
                                         
-                                    if p_data["Castle Level"] > 0:
+                                    if p_data["Castle Level"] > 0 and not is_locked(p_name, "Castle Level"):
                                         st.session_state.roster_df.at[idx, "Castle Level"] = p_data["Castle Level"]
-                                    if p_data["Lord Level"] > 0:
+                                    if p_data["Lord Level"] > 0 and not is_locked(p_name, "Lord Level"):
                                         st.session_state.roster_df.at[idx, "Lord Level"] = p_data["Lord Level"]
-                                    if p_data["Individual Reputation"] > 0:
+                                    if p_data["Individual Reputation"] > 0 and not is_locked(p_name, "Individual Reputation"):
                                         st.session_state.roster_df.at[idx, "Individual Reputation"] = p_data["Individual Reputation"]
-                                    if p_data["Power Ranking"] > 0:
+                                    if p_data["Power Ranking"] > 0 and not is_locked(p_name, "Power Ranking"):
                                         st.session_state.roster_df.at[idx, "Power Ranking"] = p_data["Power Ranking"]
-                                    if p_data["Military Rank"] != "":
+                                    if p_data["Military Rank"] != "" and not is_locked(p_name, "Military Rank"):
                                         st.session_state.roster_df.at[idx, "Military Rank"] = p_data["Military Rank"]
-                                    if p_data["Kills"] > 0:
+                                    if p_data["Kills"] > 0 and not is_locked(p_name, "Kills"):
                                         st.session_state.roster_df.at[idx, "Kills"] = p_data["Kills"]
-                                    if p_data["Losses"] > 0:
+                                    if p_data["Losses"] > 0 and not is_locked(p_name, "Losses"):
                                         st.session_state.roster_df.at[idx, "Losses"] = p_data["Losses"]
                                         
                                     save_roster()
                                     success_count += 1
-                                    st.write(f"✅ Successfully parsed profile for **{p_name}** (Castle: {p_data['Castle Level']}, BP: {p_data['Battle Power']:,})")
+                                    st.write(f"✅ Successfully parsed profile for **{p_name}**")
                                 else:
                                     st.write(f"⚠️ Could not match player name in screenshot: `{file.name}`")
                                     
@@ -543,7 +575,7 @@ elif page == "Upload Event Screenshots":
         st.info("🔒 Please enter the shared leadership passcode to access the uploader.")
 
 # ---------------------------------------------------------
-# PAGE 4: ADMIN / ROSTER EDITS
+# PAGE 4: ADMIN / ROSTER EDITS (FILTERED BY RANK & FIELD LOCKS)
 # ---------------------------------------------------------
 elif page == "Admin / Roster Edits":
     st.subheader("⚙️ Admin & Roster Edits")
@@ -553,68 +585,141 @@ elif page == "Admin / Roster Edits":
     if passcode == "rip123":
         st.success("Passcode accepted!")
         
-        with st.form("roster_update_form"):
-            target_player = st.selectbox("Select Player to Update", sorted(st.session_state.roster_df["Player Name"].unique()))
+        st.markdown("#### Select Rank Category:")
+        admin_rank_cols = st.columns(5)
+        
+        if admin_rank_cols[0].button("👑 Leaders", use_container_width=True, key="adm_btn_leader"):
+            st.session_state.admin_rank_tab = "Leader"
+        if admin_rank_cols[1].button("🛡️ Officers", use_container_width=True, key="adm_btn_off"):
+            st.session_state.admin_rank_tab = "Officer"
+        if admin_rank_cols[2].button("⚔️ Elites", use_container_width=True, key="adm_btn_elite"):
+            st.session_state.admin_rank_tab = "Elite"
+        if admin_rank_cols[3].button("📜 A-M", use_container_width=True, key="adm_btn_am"):
+            st.session_state.admin_rank_tab = "Member_AM"
+        if admin_rank_cols[4].button("📜 N-Z", use_container_width=True, key="adm_btn_nz"):
+            st.session_state.admin_rank_tab = "Member_NZ"
+
+        adm_tab = st.session_state.admin_rank_tab
+        if adm_tab == "Leader":
+            admin_filtered_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"].isin(["Alliance Leader", "Deputy"])]
+        elif adm_tab == "Officer":
+            admin_filtered_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Officer"]
+        elif adm_tab == "Elite":
+            admin_filtered_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Elite"]
+        elif adm_tab == "Member_AM":
+            all_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Member"]
+            admin_filtered_df = all_df[all_df["Player Name"].apply(lambda x: x[0].upper() <= 'M' or not x[0].isalpha())]
+        else:
+            all_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Member"]
+            admin_filtered_df = all_df[all_df["Player Name"].apply(lambda x: x[0].upper() > 'M' and x[0].isalpha())]
+
+        player_options = sorted(admin_filtered_df["Player Name"].unique().tolist())
+        
+        if not player_options:
+            st.warning("No players found in this rank category.")
+        else:
+            target_player = st.selectbox("Select Player to Edit", player_options)
             
-            st.markdown("#### Update Details:")
-            new_name = st.text_input("New Name (Leave blank to keep current)")
-            new_rank = st.selectbox("Alliance Rank", ["Alliance Leader", "Deputy", "Officer", "Elite", "Member"])
-            new_status = st.selectbox("Status", ["Active", "Inactive"])
-            
+            # Fetch current player row
             current_row = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == target_player].iloc[0]
             
-            c1, c2 = st.columns(2)
-            new_bp = c1.number_input("Battle Power", value=int(current_row["Battle Power"]), step=100000)
-            new_castle = c2.number_input("Castle Level", value=int(current_row["Castle Level"]), step=1)
-            
-            c3, c4 = st.columns(2)
-            new_kills = c3.number_input("Kills", value=int(current_row["Kills"]), step=10000)
-            new_losses = c4.number_input("Losses", value=int(current_row["Losses"]), step=1000)
-            
-            c5, c6 = st.columns(2)
-            new_lord = c5.number_input("Lord Level", value=int(current_row["Lord Level"]), step=1)
-            new_rep = c6.number_input("Individual Reputation", value=int(current_row["Individual Reputation"]), step=10000)
-            
-            c7, c8 = st.columns(2)
-            new_power_rank = c7.number_input("Power Ranking", value=int(current_row["Power Ranking"]), step=1)
-            current_mil = current_row["Military Rank"] if pd.notna(current_row["Military Rank"]) else ""
-            new_mil_rank = c8.text_input("Military Rank", value=current_mil)
-            
-            scan_date_input = st.date_input("Record Scan Date for Trend History")
-            
-            submit_update = st.form_submit_button("Save Player Updates")
-            
-            if submit_update:
-                idx = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == target_player].index[0]
+            with st.form("roster_update_form"):
+                st.markdown(f"#### Editing Profile: **{target_player}**")
                 
-                if new_name and new_name.strip() != "":
-                    st.session_state.roster_df.at[idx, "Player Name"] = new_name.strip()
-                    for log in st.session_state.attendance_records:
-                        if log["Player"] == target_player:
-                            log["Player"] = new_name.strip()
-                    target_player = new_name.strip()
+                new_name = st.text_input("New Name (Leave blank to keep current)", value="")
+                new_rank = st.selectbox("Alliance Rank", ["Alliance Leader", "Deputy", "Officer", "Elite", "Member"], index=["Alliance Leader", "Deputy", "Officer", "Elite", "Member"].index(current_row["Alliance Rank"]) if current_row["Alliance Rank"] in ["Alliance Leader", "Deputy", "Officer", "Elite", "Member"] else 4)
+                new_status = st.selectbox("Status", ["Active", "Inactive"], index=0 if current_row["Status"] == "Active" else 1)
                 
-                st.session_state.roster_df.at[idx, "Alliance Rank"] = new_rank
-                st.session_state.roster_df.at[idx, "Status"] = new_status
-                st.session_state.roster_df.at[idx, "Battle Power"] = new_bp
-                st.session_state.roster_df.at[idx, "Castle Level"] = new_castle
-                st.session_state.roster_df.at[idx, "Kills"] = new_kills
-                st.session_state.roster_df.at[idx, "Losses"] = new_losses
-                st.session_state.roster_df.at[idx, "Lord Level"] = new_lord
-                st.session_state.roster_df.at[idx, "Individual Reputation"] = new_rep
-                st.session_state.roster_df.at[idx, "Power Ranking"] = new_power_rank
-                st.session_state.roster_df.at[idx, "Military Rank"] = new_mil_rank
+                st.markdown("---")
+                st.markdown("#### Stats & Field Locks")
+                st.markdown("💡 *Check 'Lock' next to any field to protect it from being overwritten by automated OCR batch uploads.*")
                 
-                if target_player not in st.session_state.bp_history:
-                    st.session_state.bp_history[target_player] = []
-                st.session_state.bp_history[target_player].append({
-                    "Date": str(scan_date_input),
-                    "Battle Power": new_bp
-                })
+                # Field 1: Battle Power
+                c_bp1, c_bp2 = st.columns([3, 1])
+                new_bp = c_bp1.number_input("Battle Power", value=int(current_row["Battle Power"]), step=100000)
+                lock_bp = c_bp2.checkbox("🔒 Lock BP", value=is_locked(target_player, "Battle Power"), key="l_bp")
                 
-                save_roster()
-                save_history()
-                st.success(f"Successfully updated and permanently saved records for {target_player}!")
+                # Field 2: Castle Level
+                c_cas1, c_cas2 = st.columns([3, 1])
+                new_castle = c_cas1.number_input("Castle Level", value=int(current_row["Castle Level"]), step=1)
+                lock_castle = c_cas2.checkbox("🔒 Lock Castle", value=is_locked(target_player, "Castle Level"), key="l_cas")
+                
+                # Field 3: Kills
+                c_k1, c_k2 = st.columns([3, 1])
+                new_kills = c_k1.number_input("Kills", value=int(current_row["Kills"]), step=10000)
+                lock_kills = c_k2.checkbox("🔒 Lock Kills", value=is_locked(target_player, "Kills"), key="l_k")
+                
+                # Field 4: Losses
+                c_loss1, c_loss2 = st.columns([3, 1])
+                new_losses = c_loss1.number_input("Losses", value=int(current_row["Losses"]), step=1000)
+                lock_losses = c_loss2.checkbox("🔒 Lock Losses", value=is_locked(target_player, "Losses"), key="l_loss")
+                
+                # Field 5: Lord Level
+                c_lord1, c_lord2 = st.columns([3, 1])
+                new_lord = c_lord1.number_input("Lord Level", value=int(current_row["Lord Level"]), step=1)
+                lock_lord = c_lord2.checkbox("🔒 Lock Lord", value=is_locked(target_player, "Lord Level"), key="l_lord")
+                
+                # Field 6: Reputation
+                c_rep1, c_rep2 = st.columns([3, 1])
+                new_rep = c_rep1.number_input("Individual Reputation", value=int(current_row["Individual Reputation"]), step=10000)
+                lock_rep = c_rep2.checkbox("🔒 Lock Rep", value=is_locked(target_player, "Individual Reputation"), key="l_rep")
+                
+                # Field 7: Power Ranking
+                c_pr1, c_pr2 = st.columns([3, 1])
+                new_power_rank = c_pr1.number_input("Power Ranking", value=int(current_row["Power Ranking"]), step=1)
+                lock_pr = c_pr2.checkbox("🔒 Lock P.Rank", value=is_locked(target_player, "Power Ranking"), key="l_pr")
+                
+                # Field 8: Military Rank
+                c_mil1, c_mil2 = st.columns([3, 1])
+                current_mil = current_row["Military Rank"] if pd.notna(current_row["Military Rank"]) else ""
+                new_mil_rank = c_mil1.text_input("Military Rank", value=current_mil)
+                lock_mil = c_mil2.checkbox("🔒 Lock Mil.Rank", value=is_locked(target_player, "Military Rank"), key="l_mil")
+                
+                scan_date_input = st.date_input("Record Scan Date for Trend History")
+                
+                submit_update = st.form_submit_button("Save Player Updates & Locks")
+                
+                if submit_update:
+                    idx = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == target_player].index[0]
+                    
+                    if new_name and new_name.strip() != "":
+                        st.session_state.roster_df.at[idx, "Player Name"] = new_name.strip()
+                        for log in st.session_state.attendance_records:
+                            if log["Player"] == target_player:
+                                log["Player"] = new_name.strip()
+                        target_player = new_name.strip()
+                    
+                    st.session_state.roster_df.at[idx, "Alliance Rank"] = new_rank
+                    st.session_state.roster_df.at[idx, "Status"] = new_status
+                    st.session_state.roster_df.at[idx, "Battle Power"] = new_bp
+                    st.session_state.roster_df.at[idx, "Castle Level"] = new_castle
+                    st.session_state.roster_df.at[idx, "Kills"] = new_kills
+                    st.session_state.roster_df.at[idx, "Losses"] = new_losses
+                    st.session_state.roster_df.at[idx, "Lord Level"] = new_lord
+                    st.session_state.roster_df.at[idx, "Individual Reputation"] = new_rep
+                    st.session_state.roster_df.at[idx, "Power Ranking"] = new_power_rank
+                    st.session_state.roster_df.at[idx, "Military Rank"] = new_mil_rank
+                    
+                    # Update field locks
+                    set_lock(target_player, "Battle Power", lock_bp)
+                    set_lock(target_player, "Castle Level", lock_castle)
+                    set_lock(target_player, "Kills", lock_kills)
+                    set_lock(target_player, "Losses", lock_losses)
+                    set_lock(target_player, "Lord Level", lock_lord)
+                    set_lock(target_player, "Individual Reputation", lock_rep)
+                    set_lock(target_player, "Power Ranking", lock_pr)
+                    set_lock(target_player, "Military Rank", lock_mil)
+                    
+                    if target_player not in st.session_state.bp_history:
+                        st.session_state.bp_history[target_player] = []
+                    st.session_state.bp_history[target_player].append({
+                        "Date": str(scan_date_input),
+                        "Battle Power": new_bp
+                    })
+                    
+                    save_roster()
+                    save_history()
+                    st.success(f"Successfully updated and permanently saved records and locks for {target_player}!")
     elif passcode != "":
         st.error("Incorrect passcode.")
     else:
