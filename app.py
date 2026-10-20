@@ -72,25 +72,21 @@ st.markdown(
 # FUZZY MATCHING HELPER FUNCTION
 # ---------------------------------------------------------
 def clean_text(text):
-    """Strip special symbols and lowercase for comparison"""
     return "".join(c for c in text if c.isalnum()).lower()
 
 def find_best_roster_match(ocr_chunk, roster_names, cutoff=0.70):
-    """Finds the closest matching roster name given an OCR text snippet"""
     best_match = None
     highest_score = 0.0
     cleaned_chunk = clean_text(ocr_chunk)
     
-    if len(cleaned_chunk) < 3: # Skip tiny fragments
+    if len(cleaned_chunk) < 3:
         return None, 0.0
         
     for name in roster_names:
         cleaned_name = clean_text(name)
-        # Check direct substring containment first
         if cleaned_name in cleaned_chunk or cleaned_chunk in cleaned_name:
             return name, 1.0
             
-        # Fallback to sequence similarity ratio
         score = SequenceMatcher(None, cleaned_chunk, cleaned_name).ratio()
         if score > highest_score:
             highest_score = score
@@ -101,7 +97,7 @@ def find_best_roster_match(ocr_chunk, roster_names, cutoff=0.70):
     return None, 0.0
 
 # ---------------------------------------------------------
-# 1. MASTER ROSTER INITIALIZATION
+# 1. MASTER ROSTER INITIALIZATION (RESTORED BATTLE POWERS)
 # ---------------------------------------------------------
 if 'roster_df' not in st.session_state:
     st.session_state.roster_df = pd.DataFrame({
@@ -136,7 +132,22 @@ if 'roster_df' not in st.session_state:
             "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member",
             "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member"
         ],
-        "Battle Power": [0] * 98,
+        "Battle Power": [
+            114868760, 19755892, 46233787, 73798788, 27125931, 33185471, 14412624,
+            41320177, 30311814, 27592265, 53629229, 14484362, 29558050, 64213255, 12870792,
+            24504174, 32362970, 13481429, 20718008, 41983374, 14223374, 29167177,
+            13214323, 28068481, 17422525, 32072931, 22049897, 17153913, 22959795, 13353616,
+            16340322, 17826745, 16798028, 0, 17597305, 20851556, 23351759,
+            22416721, 16595288, 16987720, 18864239, 25294936, 17687980, 20048433,
+            16493289, 21199760, 26577988, 15101687, 17835737, 20452615, 11007546, 10329042,
+            20292626, 13949713, 22701921, 22615040, 10044142, 28685097, 16881537,
+            17039949, 12238796, 12710750, 8655503, 12561949, 0, 29729176, 11624664,
+            20266930, 9329853, 10820403, 17063715, 46720961, 20773665, 0,
+            9351327, 17047386, 13851926, 18706825, 12153728, 21693287, 22976112,
+            13134740, 11073114, 6968217, 12849922, 8767112, 9780074, 16478082,
+            16008706, 18590299, 15498491, 20010237, 18409578, 22880798, 16406189, 29270139,
+            12223807, 18231946
+        ],
         "Kills": [0] * 98,
         "Losses": [0] * 98,
         "Castle Level": [0] * 98,
@@ -179,280 +190,4 @@ if 'attendance_records' not in st.session_state:
     for p in ew_1011_2: october_historical_logs.append({"Event": "Elite Wars (Battle 2)", "Date": "2026-10-11", "Player": p, "Status": "Not Entered"})
 
     ri_1016 = ["( ミ BEAR 彡 )", "¿?¿SaVi¿?¿", "▪■CH£CH£■▪", "Twatapotomous", "GRO↑نطو", "AndresEled", "Δpredator®", "§Grutovsky§", "Ġñøşïş", ":::MaxHook:::", "Maldit@!", "Alfonso....*_*", "002 سرراف", "susanstorms", "*Skynet*", "عـبـغـش31DZ", "Adrián@Arg.", "神秘紅", "†•Dark•Horse•†", "_Qahtan_", "Riad", "tsopanakos"]
-    for p in ri_1016: october_historical_logs.append({"Event": "Realm Invasion", "Date": "2026-10-16", "Player": p, "Status": "Not Entered"})
-
-    ew_1018 = ["▪■CH£CH£■▪", "Twatapotomous", "¿?¿SaVi¿?¿", "|~*HEIMDALL*~|", "GRO↑نطو", "( ミ BEAR 彡 )", "Maldit@!", "ϒ_G", "卄 モ .爪爪爪.", "Vdehke", "不愛水的魚～", "†•Dark•Horse•†", "®Goodboy®", "~•CHARLS~•", "OoöõpsyyyWoLFy", "_Qahtan_", "susanstorms", "*Skynet*", "kang~tahu", "Alfonso....*_*", "hamza£hegazy", "ቔƥµŧɕhêŘቔ", "ArturAlexiy", "SHOGUNsrb", "josevnzl", "عـبـغـش31DZ", "神秘紅", "DARKNESS_^"]
-    for p in ew_1018: october_historical_logs.append({"Event": "Elite Wars", "Date": "2026-10-18", "Player": p, "Status": "Not Entered"})
-
-    st.session_state.attendance_records = october_historical_logs
-
-# ---------------------------------------------------------
-# 3. NAVIGATION SIDEBAR
-# ---------------------------------------------------------
-st.sidebar.markdown("### 📌 Command Menu")
-page = st.sidebar.radio("Go to:", [
-    "Player Profiles", 
-    "Alliance Overview & Stats", 
-    "Upload Event Screenshots", 
-    "Admin / Roster Edits"
-])
-
-# ---------------------------------------------------------
-# PAGE 1: PLAYER PROFILES
-# ---------------------------------------------------------
-if page == "Player Profiles":
-    st.subheader("👤 Alliance Member Profiles")
-    st.markdown("Select a rank filter below, then tap a member card to view their profile stats.")
-    
-    rank_cols = st.columns(5)
-    
-    if rank_cols[0].button("👑 Leaders", use_container_width=True):
-        st.session_state.active_rank_tab = "Leader"
-    if rank_cols[1].button("🛡️ Officers", use_container_width=True):
-        st.session_state.active_rank_tab = "Officer"
-    if rank_cols[2].button("⚔️ Elites", use_container_width=True):
-        st.session_state.active_rank_tab = "Elite"
-    if rank_cols[3].button("📜 A-M", use_container_width=True):
-        st.session_state.active_rank_tab = "Member_AM"
-    if rank_cols[4].button("📜 N-Z", use_container_width=True):
-        st.session_state.active_rank_tab = "Member_NZ"
-
-    active_tab = st.session_state.active_rank_tab
-    if active_tab == "Leader":
-        filtered_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"].isin(["Alliance Leader", "Deputy"])]
-    elif active_tab == "Officer":
-        filtered_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Officer"]
-    elif active_tab == "Elite":
-        filtered_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Elite"]
-    elif active_tab == "Member_AM":
-        all_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Member"]
-        filtered_df = all_df[all_df["Player Name"].apply(lambda x: x[0].upper() <= 'M' or not x[0].isalpha())]
-    else:
-        all_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Member"]
-        filtered_df = all_df[all_df["Player Name"].apply(lambda x: x[0].upper() > 'M' and x[0].isalpha())]
-
-    st.markdown("#### Select Player Card:")
-    grid_cols = st.columns(2)
-    for idx, row in filtered_df.reset_index().iterrows():
-        p_name = row["Player Name"]
-        p_bp = row["Battle Power"]
-        bp_label = f"{p_bp / 1_000_000:.1f}M" if p_bp > 0 else "0"
-        
-        if grid_cols[idx % 2].button(f"🛡️ {p_name}\n⚔️ {bp_label} BP", key=f"card_{p_name}", use_container_width=True):
-            st.session_state.selected_player_name = p_name
-
-    selected_player = st.session_state.selected_player_name
-    st.markdown("---")
-    st.markdown(f"### ⚔️ Active Profile: **{selected_player}**")
-    
-    player_row = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == selected_player].iloc[0]
-    
-    all_events_count = 7
-    player_misses = [r for r in st.session_state.attendance_records if r["Player"] == selected_player]
-    missed_count = len(player_misses)
-    attended_count = all_events_count - missed_count
-    attendance_pct = (attended_count / all_events_count) * 100.0 if all_events_count > 0 else 100.0
-    
-    bp_disp = f"{player_row['Battle Power']:,}" if player_row['Battle Power'] > 0 else "—"
-    castle_disp = str(player_row['Castle Level']) if player_row['Castle Level'] > 0 else "—"
-    lord_disp = str(player_row['Lord Level']) if player_row['Lord Level'] > 0 else "—"
-    kills_disp = f"{player_row['Kills']:,}" if player_row['Kills'] > 0 else "—"
-    losses_disp = f"{player_row['Losses']:,}" if player_row['Losses'] > 0 else "—"
-    rep_disp = f"{player_row['Individual Reputation']:,}" if player_row['Individual Reputation'] > 0 else "—"
-    mil_disp = player_row['Military Rank'] if player_row['Military Rank'] != "" else "—"
-
-    r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
-    r1_c1.metric("Rank", player_row["Alliance Rank"])
-    r1_c2.metric("Battle Power", bp_disp)
-    r1_c3.metric("Castle Lvl", castle_disp)
-    r1_c4.metric("Lord Lvl", lord_disp)
-    
-    r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
-    r2_c1.metric("Kills", kills_disp)
-    r2_c2.metric("Losses", losses_disp)
-    r2_c3.metric("Reputation", rep_disp)
-    r2_c4.metric("Military Rank", mil_disp)
-
-    r3_c1, r3_c2 = st.columns(2)
-    r3_c1.metric("Events Attended", f"{attended_count} / {all_events_count} ({attendance_pct:.1f}%)")
-    r3_c2.metric("Status", player_row["Status"])
-    
-    st.markdown("---")
-    st.subheader("📋 Missed Events Log")
-    if player_misses:
-        missed_df = pd.DataFrame(player_misses)[["Event", "Date", "Status"]]
-        st.dataframe(missed_df, use_container_width=True, hide_index=True)
-    else:
-        st.success("🌟 Perfect Attendance! Entered all 7 tracked October events.")
-        
-    st.subheader("📈 Battle Power Trend History")
-    p_history = st.session_state.bp_history.get(selected_player, [])
-    if p_history:
-        history_df = pd.DataFrame(p_history)
-        st.line_chart(history_df.set_index("Date"))
-    else:
-        st.info("No historical BP scans recorded yet. Upload profile screenshots or update manually to begin tracking trends.")
-
-# ---------------------------------------------------------
-# PAGE 2: ALLIANCE OVERVIEW & STATS
-# ---------------------------------------------------------
-elif page == "Alliance Overview & Stats":
-    st.subheader("📊 Alliance Participation Overview")
-    
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Roster Members", len(st.session_state.roster_df))
-    c2.metric("Tracked Events (October)", "7")
-    c3.metric("Total Logged Entries", len(st.session_state.attendance_records))
-    
-    st.markdown("---")
-    st.subheader("📋 Complete Roster & War Stats Table")
-    st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
-    
-    st.markdown("---")
-    st.subheader("📋 Complete Event Log Audit")
-    if st.session_state.attendance_records:
-        st.dataframe(pd.DataFrame(st.session_state.attendance_records), use_container_width=True, hide_index=True)
-
-# ---------------------------------------------------------
-# PAGE 3: UPLOAD SCREENSHOTS (FUZZY MATCHING ENABLED)
-# ---------------------------------------------------------
-elif page == "Upload Event Screenshots":
-    st.subheader("📸 Bulk Screenshot Uploader")
-    
-    passcode = st.text_input("Enter Leadership Passcode to Unlock Uploader:", type="password")
-    
-    if passcode == "rip123":
-        st.success("Passcode accepted!")
-        
-        upload_type = st.radio("Select Upload Type:", ["Event Attendance (Not Entered / Battlers)", "Player Info / Stats (Bulk OCR Update)"], horizontal=True)
-        
-        if "Attendance" in upload_type:
-            col1, col2 = st.columns(2)
-            with col1:
-                selected_event = st.selectbox("Select Event", st.session_state.events_list, key="upload_event")
-            with col2:
-                event_date = st.date_input("Battle Date")
-                
-            entry_mode = st.radio("Logging Mode:", ["Log Non-Attendants ('Not Entered')", "Log Attendants ('Battlers')"], horizontal=True)
-        else:
-            scan_date = st.date_input("Stat Scan Date")
-            st.markdown("💡 *Tip: You can select up to **20 screenshots at once**. Fuzzy matching will automatically resolve font and symbol variances against your roster.*")
-
-        uploaded_files = st.file_uploader("Choose screenshot(s)... (Max 20 files)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
-        
-        if uploaded_files:
-            if len(uploaded_files) > 20:
-                st.warning("⚠️ Please limit batches to 20 screenshots at a time for optimal performance.")
-            else:
-                st.write(f"📁 **{len(uploaded_files)} screenshot(s) ready for processing.**")
-                for i, file in enumerate(uploaded_files):
-                    with st.expander(f"Preview Screenshot {i+1}: {file.name}"):
-                        img = Image.open(file)
-                        st.image(img, use_container_width=True)
-                        
-                if st.button("Process Batch Screenshots with Fuzzy Match"):
-                    with st.spinner("Running OCR and Fuzzy Name Matching..."):
-                        roster_names = st.session_state.roster_df["Player Name"].tolist()
-                        matched_members = set()
-                        
-                        for file in uploaded_files:
-                            img = Image.open(file)
-                            text = pytesseract.image_to_string(img)
-                            # Split text into lines or words to check against names
-                            lines = text.split('\n')
-                            for line in lines:
-                                # Test each line against fuzzy matching
-                                best_match, score = find_best_roster_match(line, roster_names, cutoff=0.75)
-                                if best_match:
-                                    matched_members.add(best_match)
-                        
-                        if "Attendance" in upload_type:
-                            for name in matched_members:
-                                st.session_state.attendance_records.append({
-                                    "Event": selected_event,
-                                    "Date": str(event_date),
-                                    "Player": name,
-                                    "Status": "Not Entered" if "Non-Attendants" in entry_mode else "Entered"
-                                })
-                            st.success(f"Successfully matched and logged {len(matched_members)} attendance entries across {len(uploaded_files)} screenshot(s)!")
-                        else:
-                            st.success(f"Processed {len(uploaded_files)} screenshots! Successfully fuzzy-matched {len(matched_members)} unique alliance members.")
-                            if matched_members:
-                                st.write("**Matched Members Found:**", list(matched_members))
-    elif passcode != "":
-        st.error("Incorrect passcode.")
-    else:
-        st.info("🔒 Please enter the shared leadership passcode to access the uploader.")
-
-# ---------------------------------------------------------
-# PAGE 4: ADMIN / ROSTER EDITS
-# ---------------------------------------------------------
-elif page == "Admin / Roster Edits":
-    st.subheader("⚙️ Admin & Roster Edits")
-    
-    passcode = st.text_input("Enter Leadership Passcode to Unlock Admin Tools:", type="password", key="admin_pass")
-    
-    if passcode == "rip123":
-        st.success("Passcode accepted!")
-        
-        with st.form("roster_update_form"):
-            target_player = st.selectbox("Select Player to Update", sorted(st.session_state.roster_df["Player Name"].unique()))
-            
-            st.markdown("#### Update Details:")
-            new_name = st.text_input("New Name (Leave blank to keep current)")
-            new_rank = st.selectbox("Alliance Rank", ["Alliance Leader", "Deputy", "Officer", "Elite", "Member"])
-            new_status = st.selectbox("Status", ["Active", "Inactive"])
-            
-            current_row = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == target_player].iloc[0]
-            
-            c1, c2 = st.columns(2)
-            new_bp = c1.number_input("Battle Power", value=int(current_row["Battle Power"]), step=100000)
-            new_castle = c2.number_input("Castle Level", value=int(current_row["Castle Level"]), step=1)
-            
-            c3, c4 = st.columns(2)
-            new_kills = c3.number_input("Kills", value=int(current_row["Kills"]), step=10000)
-            new_losses = c4.number_input("Losses", value=int(current_row["Losses"]), step=1000)
-            
-            c5, c6 = st.columns(2)
-            new_lord = c5.number_input("Lord Level", value=int(current_row["Lord Level"]), step=1)
-            new_rep = c6.number_input("Individual Reputation", value=int(current_row["Individual Reputation"]), step=10000)
-            
-            current_mil = current_row["Military Rank"] if current_row["Military Rank"] != "" else ""
-            new_mil_rank = st.text_input("Military Rank", value=current_mil)
-            
-            scan_date_input = st.date_input("Record Scan Date for Trend History")
-            
-            submit_update = st.form_submit_button("Save Player Updates")
-            
-            if submit_update:
-                idx = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == target_player].index[0]
-                
-                if new_name and new_name.strip() != "":
-                    st.session_state.roster_df.at[idx, "Player Name"] = new_name.strip()
-                    for log in st.session_state.attendance_records:
-                        if log["Player"] == target_player:
-                            log["Player"] = new_name.strip()
-                    target_player = new_name.strip()
-                
-                st.session_state.roster_df.at[idx, "Alliance Rank"] = new_rank
-                st.session_state.roster_df.at[idx, "Status"] = new_status
-                st.session_state.roster_df.at[idx, "Battle Power"] = new_bp
-                st.session_state.roster_df.at[idx, "Castle Level"] = new_castle
-                st.session_state.roster_df.at[idx, "Kills"] = new_kills
-                st.session_state.roster_df.at[idx, "Losses"] = new_losses
-                st.session_state.roster_df.at[idx, "Lord Level"] = new_lord
-                st.session_state.roster_df.at[idx, "Individual Reputation"] = new_rep
-                st.session_state.roster_df.at[idx, "Military Rank"] = new_mil_rank
-                
-                if target_player not in st.session_state.bp_history:
-                    st.session_state.bp_history[target_player] = []
-                st.session_state.bp_history[target_player].append({
-                    "Date": str(scan_date_input),
-                    "Battle Power": new_bp
-                })
-                
-                st.success(f"Successfully updated profile records and history for {target_player}!")
-    elif passcode != "":
-        st.error("Incorrect passcode.")
-    else:
-        st.info("🔒 Please enter the shared leadership passcode to access admin edits.")
+    for p in ri_1016: october_historical_logs.append({"Event": "Realm Invasion", "Date": "2026-10-1
