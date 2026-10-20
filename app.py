@@ -68,7 +68,7 @@ st.markdown(
 )
 
 # ---------------------------------------------------------
-# 1. RESTORE MASTER ROSTER DATA WITH CORRECT BATTLE POWERS & STATS
+# 1. MASTER ROSTER: RANK, BP, STATUS FULLY POPULATED. OTHERS BLANK.
 # ---------------------------------------------------------
 if 'roster_df' not in st.session_state:
     st.session_state.roster_df = pd.DataFrame({
@@ -119,12 +119,12 @@ if 'roster_df' not in st.session_state:
             16008706, 18590299, 15498491, 20010237, 18409578, 22880798, 16406189, 29270139,
             12223807, 18231946
         ],
-        "Kills": [1520000] + [250000] * 97,
-        "Losses": [45000] + [10000] * 97,
-        "Castle Level": [40] + [35] * 97,
-        "Lord Level": [60] + [50] * 97,
-        "Individual Reputation": [850000] + [150000] * 97,
-        "Military Rank": ["Marshal"] + ["General"] * 97,
+        "Kills": [0] * 98,
+        "Losses": [0] * 98,
+        "Castle Level": [0] * 98,
+        "Lord Level": [0] * 98,
+        "Individual Reputation": [0] * 98,
+        "Military Rank": [""] * 98,
         "Status": ["Active"] * 98
     })
 
@@ -399,7 +399,7 @@ elif page == "Admin / Roster Edits":
             new_lord = c5.number_input("Lord Level", value=int(current_row["Lord Level"]), step=1)
             new_rep = c6.number_input("Individual Reputation", value=int(current_row["Individual Reputation"]), step=10000)
             
-            current_mil = current_row["Military Rank"] if current_row["Military Rank"] != "" else "General"
+            current_mil = current_row["Military Rank"] if current_row["Military Rank"] != "" else ""
             new_mil_rank = st.text_input("Military Rank", value=current_mil)
             
             scan_date_input = st.date_input("Record Scan Date for Trend History")
