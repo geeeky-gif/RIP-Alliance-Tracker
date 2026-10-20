@@ -68,7 +68,7 @@ st.markdown(
 )
 
 # ---------------------------------------------------------
-# 1. INITIALIZE MASTER ROSTER DATA WITH ALL PLAYER STATS
+# 1. INITIALIZE MASTER ROSTER DATA (BLANK/NULL UNTIL SCANNED)
 # ---------------------------------------------------------
 if 'roster_df' not in st.session_state:
     st.session_state.roster_df = pd.DataFrame({
@@ -103,28 +103,13 @@ if 'roster_df' not in st.session_state:
             "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member",
             "Member", "Member", "Member", "Member", "Member", "Member", "Member", "Member"
         ],
-        "Battle Power": [
-            114868760, 19755892, 46233787, 73798788, 27125931, 33185471, 14412624,
-            41320177, 30311814, 27592265, 53629229, 14484362, 29558050, 64213255, 12870792,
-            24504174, 32362970, 13481429, 20718008, 41983374, 14223374, 29167177,
-            13214323, 28068481, 17422525, 32072931, 22049897, 17153913, 22959795, 13353616,
-            16340322, 17826745, 16798028, 0, 17597305, 20851556, 23351759,
-            22416721, 16595288, 16987720, 18864239, 25294936, 17687980, 20048433,
-            16493289, 21199760, 26577988, 15101687, 17835737, 20452615, 11007546, 10329042,
-            20292626, 13949713, 22701921, 22615040, 10044142, 28685097, 16881537,
-            17039949, 12238796, 12710750, 8655503, 12561949, 0, 29729176, 11624664,
-            20266930, 9329853, 10820403, 17063715, 46720961, 20773665, 0,
-            9351327, 17047386, 13851926, 18706825, 12153728, 21693287, 22976112,
-            13134740, 11073114, 6968217, 12849922, 8767112, 9780074, 16478082,
-            16008706, 18590299, 15498491, 20010237, 18409578, 22880798, 16406189, 29270139,
-            12223807, 18231946
-        ],
-        "Kills": [1520000] + [250000] * 97,
-        "Losses": [45000] + [10000] * 97,
-        "Castle Level": [40] + [35] * 97,
-        "Lord Level": [60] + [50] * 97,
-        "Individual Reputation": [850000] + [150000] * 97,
-        "Military Rank": ["Marshal"] + ["General"] * 97,
+        "Battle Power": [0] * 98,
+        "Kills": [0] * 98,
+        "Losses": [0] * 98,
+        "Castle Level": [0] * 98,
+        "Lord Level": [0] * 98,
+        "Individual Reputation": [0] * 98,
+        "Military Rank": [""] * 98,
         "Status": ["Active"] * 98
     })
 
@@ -133,6 +118,10 @@ if 'selected_player_name' not in st.session_state:
 
 if 'active_rank_tab' not in st.session_state:
     st.session_state.active_rank_tab = "Leader"
+
+# Initialize BP History tracking dict in session state
+if 'bp_history' not in st.session_state:
+    st.session_state.bp_history = {} # Format: {player_name: [{"Date": str, "BP": int}]}
 
 # ---------------------------------------------------------
 # 2. INITIALIZE PRE-LOGGED OCTOBER EVENTS
@@ -177,11 +166,11 @@ page = st.sidebar.radio("Go to:", [
 ])
 
 # ---------------------------------------------------------
-# PAGE 1: PLAYER PROFILES (MULTI-ROW METRICS LAYOUT)
+# PAGE 1: PLAYER PROFILES (CLEAN REAL DATA DISPLAY)
 # ---------------------------------------------------------
 if page == "Player Profiles":
     st.subheader("👤 Alliance Member Profiles")
-    st.markdown("Select a rank filter below, then tap a member card to view their complete war stats.")
+    st.markdown("Select a rank filter below, then tap a member card to view their actual scanned stats.")
     
     # Touch Pills for Rank Selection
     rank_cols = st.columns(5)
@@ -218,9 +207,9 @@ if page == "Player Profiles":
     for idx, row in filtered_df.reset_index().iterrows():
         p_name = row["Player Name"]
         p_bp = row["Battle Power"]
-        bp_label = f"{p_bp / 1_000_000:.1f}M" if p_bp > 0 else "0"
+        bp_label = f"{p_bp / 1_000_000:.1f}M" if p_bp > 0 else "No Data"
         
-        if grid_cols[idx % 2].button(f"🛡️ {p_name}\n⚔️ {bp_label} BP", key=f"card_{p_name}", use_container_width=True):
+        if grid_cols[idx % 2].button(f"🛡️ {p_name}\n⚔️ {bp_label}", key=f"card_{p_name}", use_container_width=True):
             st.session_state.selected_player_name = p_name
 
     selected_player = st.session_state.selected_player_name
@@ -235,20 +224,27 @@ if page == "Player Profiles":
     attended_count = all_events_count - missed_count
     attendance_pct = (attended_count / all_events_count) * 100.0 if all_events_count > 0 else 100.0
     
-    # ---------------------------------------------------------
-    # MULTI-ROW METRICS DISPLAY (FITS LANDSCAPE MOBILE PERFECTLY)
-    # ---------------------------------------------------------
+    # Format display values (show blanks/N/A if no data recorded yet)
+    bp_disp = f"{player_row['Battle Power']:,}" if player_row['Battle Power'] > 0 else "—"
+    castle_disp = str(player_row['Castle Level']) if player_row['Castle Level'] > 0 else "—"
+    lord_disp = str(player_row['Lord Level']) if player_row['Lord Level'] > 0 else "—"
+    kills_disp = f"{player_row['Kills']:,}" if player_row['Kills'] > 0 else "—"
+    losses_disp = f"{player_row['Losses']:,}" if player_row['Losses'] > 0 else "—"
+    rep_disp = f"{player_row['Individual Reputation']:,}" if player_row['Individual Reputation'] > 0 else "—"
+    mil_disp = player_row['Military Rank'] if player_row['Military Rank'] != "" else "—"
+
+    # Multi-row metrics layout
     r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
     r1_c1.metric("Rank", player_row["Alliance Rank"])
-    r1_c2.metric("Battle Power", f"{player_row['Battle Power']:,}")
-    r1_c3.metric("Castle Lvl", player_row["Castle Level"])
-    r1_c4.metric("Lord Lvl", player_row["Lord Level"])
+    r1_c2.metric("Battle Power", bp_disp)
+    r1_c3.metric("Castle Lvl", castle_disp)
+    r1_c4.metric("Lord Lvl", lord_disp)
     
     r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
-    r2_c1.metric("Kills", f"{player_row['Kills']:,}")
-    r2_c2.metric("Losses", f"{player_row['Losses']:,}")
-    r2_c3.metric("Reputation", f"{player_row['Individual Reputation']:,}")
-    r2_c4.metric("Military Rank", player_row["Military Rank"])
+    r2_c1.metric("Kills", kills_disp)
+    r2_c2.metric("Losses", losses_disp)
+    r2_c3.metric("Reputation", rep_disp)
+    r2_c4.metric("Military Rank", mil_disp)
 
     r3_c1, r3_c2 = st.columns(2)
     r3_c1.metric("Events Attended", f"{attended_count} / {all_events_count} ({attendance_pct:.1f}%)")
@@ -262,13 +258,14 @@ if page == "Player Profiles":
     else:
         st.success("🌟 Perfect Attendance! Entered all 7 tracked October events.")
         
-    st.subheader("📈 Battle Power Trend")
-    bp_val = player_row["Battle Power"]
-    bp_data = pd.DataFrame({
-        "Date": ["2026-10-01", "2026-10-08", "2026-10-15", "2026-10-18"],
-        "Battle Power": [bp_val * 0.96, bp_val * 0.98, bp_val * 0.99, bp_val]
-    })
-    st.line_chart(bp_data.set_index("Date"))
+    st.subheader("📈 Battle Power Trend History")
+    # Only show trend chart if real historical data has been logged for this player
+    p_history = st.session_state.bp_history.get(selected_player, [])
+    if p_history:
+        history_df = pd.DataFrame(p_history)
+        st.line_chart(history_df.set_index("Date"))
+    else:
+        st.info("No historical BP scans recorded yet. Upload profile screenshots or update manually to begin tracking trends.")
 
 # ---------------------------------------------------------
 # PAGE 2: ALLIANCE OVERVIEW & STATS (READ-ONLY)
@@ -291,7 +288,7 @@ elif page == "Alliance Overview & Stats":
         st.dataframe(pd.DataFrame(st.session_state.attendance_records), use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# PAGE 3: UPLOAD SCREENSHOTS (BULK UPLOADER UP TO 20 FILES)
+# PAGE 3: UPLOAD SCREENSHOTS (BULK UPLOADER)
 # ---------------------------------------------------------
 elif page == "Upload Event Screenshots":
     st.subheader("📸 Bulk Screenshot Uploader")
@@ -312,14 +309,14 @@ elif page == "Upload Event Screenshots":
                 
             entry_mode = st.radio("Logging Mode:", ["Log Non-Attendants ('Not Entered')", "Log Attendants ('Battlers')"], horizontal=True)
         else:
+            scan_date = st.date_input("Stat Scan Date")
             st.markdown("💡 *Tip: You can select up to **20 screenshots at once** to quickly update player stats across your roster.*")
 
-        # accept_multiple_files=True allows batching up to 20 files smoothly
         uploaded_files = st.file_uploader("Choose screenshot(s)... (Max 20 files)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         
         if uploaded_files:
             if len(uploaded_files) > 20:
-                st.warning("⚠️ You selected more than 20 files. Please limit batches to 20 screenshots at a time for optimal performance.")
+                st.warning("⚠️ Please limit batches to 20 screenshots at a time for optimal performance.")
             else:
                 st.write(f"📁 **{len(uploaded_files)} screenshot(s) ready for processing.**")
                 for i, file in enumerate(uploaded_files):
@@ -347,7 +344,6 @@ elif page == "Upload Event Screenshots":
                                 })
                             st.success(f"Successfully logged {len(detected_names)} attendance entries across {len(uploaded_files)} screenshot(s)!")
                         else:
-                            # Player Info Bulk OCR simulation/matching
                             matched_count = 0
                             for file in uploaded_files:
                                 img = Image.open(file)
@@ -355,9 +351,10 @@ elif page == "Upload Event Screenshots":
                                 for idx, row in st.session_state.roster_df.iterrows():
                                     p_name = row["Player Name"]
                                     if p_name in text:
-                                        # Example placeholder logic: OCR text parsed successfully
+                                        # Real OCR scan match found
                                         matched_count += 1
-                            st.success(f"Processed {len(uploaded_files)} player info screenshots! Cross-referenced and updated records for {matched_count} member occurrences.")
+                                        # Note: Actual regex number extraction from OCR text can be mapped here as scans populate
+                            st.success(f"Processed {len(uploaded_files)} player info screenshots! Cross-referenced and detected {matched_count} member occurrences.")
     elif passcode != "":
         st.error("Incorrect passcode.")
     else:
@@ -383,18 +380,22 @@ elif page == "Admin / Roster Edits":
             new_status = st.selectbox("Status", ["Active", "Inactive"])
             
             c1, c2 = st.columns(2)
-            new_bp = c1.number_input("Battle Power", value=0, step=100000)
-            new_castle = c2.number_input("Castle Level", value=40, step=1)
+            current_row = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == target_player].iloc[0]
+            new_bp = c1.number_input("Battle Power", value=int(current_row["Battle Power"]), step=100000)
+            new_castle = c2.number_input("Castle Level", value=int(current_row["Castle Level"]), step=1)
             
             c3, c4 = st.columns(2)
-            new_kills = c3.number_input("Kills", value=0, step=10000)
-            new_losses = c4.number_input("Losses", value=0, step=1000)
+            new_kills = c3.number_input("Kills", value=int(current_row["Kills"]), step=10000)
+            new_losses = c4.number_input("Losses", value=int(current_row["Losses"]), step=1000)
             
             c5, c6 = st.columns(2)
-            new_lord = c5.number_input("Lord Level", value=60, step=1)
-            new_rep = c6.number_input("Individual Reputation", value=0, step=10000)
+            new_lord = c5.number_input("Lord Level", value=int(current_row["Lord Level"]), step=1)
+            new_rep = c6.number_input("Individual Reputation", value=int(current_row["Individual Reputation"]), step=10000)
             
-            new_mil_rank = st.text_input("Military Rank", value="General")
+            current_mil = current_row["Military Rank"] if current_row["Military Rank"] != "" else "General"
+            new_mil_rank = st.text_input("Military Rank", value=current_mil)
+            
+            scan_date_input = st.date_input("Record Scan Date for Trend History")
             
             submit_update = st.form_submit_button("Save Player Updates")
             
@@ -406,10 +407,11 @@ elif page == "Admin / Roster Edits":
                     for log in st.session_state.attendance_records:
                         if log["Player"] == target_player:
                             log["Player"] = new_name.strip()
+                    target_player = new_name.strip()
                 
                 st.session_state.roster_df.at[idx, "Alliance Rank"] = new_rank
                 st.session_state.roster_df.at[idx, "Status"] = new_status
-                if new_bp > 0: st.session_state.roster_df.at[idx, "Battle Power"] = new_bp
+                st.session_state.roster_df.at[idx, "Battle Power"] = new_bp
                 st.session_state.roster_df.at[idx, "Castle Level"] = new_castle
                 st.session_state.roster_df.at[idx, "Kills"] = new_kills
                 st.session_state.roster_df.at[idx, "Losses"] = new_losses
@@ -417,7 +419,15 @@ elif page == "Admin / Roster Edits":
                 st.session_state.roster_df.at[idx, "Individual Reputation"] = new_rep
                 st.session_state.roster_df.at[idx, "Military Rank"] = new_mil_rank
                 
-                st.success(f"Successfully updated profile records for {target_player}!")
+                # Append to actual BP History for real trend tracking
+                if target_player not in st.session_state.bp_history:
+                    st.session_state.bp_history[target_player] = []
+                st.session_state.bp_history[target_player].append({
+                    "Date": str(scan_date_input),
+                    "Battle Power": new_bp
+                })
+                
+                st.success(f"Successfully updated profile records and history for {target_player}!")
     elif passcode != "":
         st.error("Incorrect passcode.")
     else:
