@@ -282,11 +282,16 @@ page = st.sidebar.radio("Go to:", [
 if page == "Player Profiles":
     st.subheader("👤 Alliance Member Profiles")
     rank_cols = st.columns(5)
-    if rank_cols[0].button("👑 Leaders", use_container_width=True): st.session_state.active_rank_tab = "Leader"
-    if rank_cols[1].button("🛡️ Officers", use_container_width=True): st.session_state.active_rank_tab = "Officer"
-    if rank_cols[2].button("⚔️ Elites", use_container_width=True): st.session_state.active_rank_tab = "Elite"
-    if rank_cols[3].button("📜 A-M", use_container_width=True): st.session_state.active_rank_tab = "Member_AM"
-    if rank_cols[4].button("📜 N-Z", use_container_width=True): st.session_state.active_rank_tab = "Member_NZ"
+    if rank_cols[0].button("👑 Leaders", use_container_width=True):
+        st.session_state.active_rank_tab = "Leader"
+    if rank_cols[1].button("🛡️ Officers", use_container_width=True):
+        st.session_state.active_rank_tab = "Officer"
+    if rank_cols[2].button("⚔️ Elites", use_container_width=True):
+        st.session_state.active_rank_tab = "Elite"
+    if rank_cols[3].button("📜 A-M", use_container_width=True):
+        st.session_state.active_rank_tab = "Member_AM"
+    if rank_cols[4].button("📜 N-Z", use_container_width=True):
+        st.session_state.active_rank_tab = "Member_NZ"
 
     active_tab = st.session_state.active_rank_tab
     if active_tab == "Leader":
@@ -348,157 +353,4 @@ if page == "Player Profiles":
 # ---------------------------------------------------------
 elif page == "Attendance Thresholds":
     st.subheader("🎯 Low Attendance Audit & Rank Minimums")
-    threshold = st.slider("Select Participation Benchmark (%):", min_value=0, max_value=100, value=70, step=5)
-    
-    low_att_list = []
-    for _, row in st.session_state.roster_df.iterrows():
-        p_name = row["Player Name"]
-        att_cnt, total_cnt, pct, _ = get_player_attendance_stats(p_name)
-        if pct < threshold:
-            low_att_list.append({"Player Name": p_name, "Alliance Rank": row["Alliance Rank"], "Battle Power": row["Battle Power"], "Events Attended": f"{att_cnt} / {total_cnt}", "Attendance %": f"{pct:.1f}%", "Status": row["Status"]})
-            
-    low_att_df = pd.DataFrame(low_att_list)
-    st.markdown(f"### ⚠️ Accounts Below **{threshold}%** Participation ({len(low_att_df)} Total)")
-    
-    t_rank_cols = st.columns(5)
-    if t_rank_cols[0].button("👑 Leaders", use_container_width=True, key="t_btn_lead"): st.session_state.thresh_rank_tab = "Leader"
-    if t_rank_cols[1].button("🛡️ Officers", use_container_width=True, key="t_btn_off"): st.session_state.thresh_rank_tab = "Officer"
-    if t_rank_cols[2].button("⚔️ Elites", use_container_width=True, key="t_btn_elite"): st.session_state.thresh_rank_tab = "Elite"
-    if t_rank_cols[3].button("📜 Members A-M", use_container_width=True, key="t_btn_am"): st.session_state.thresh_rank_tab = "Member_AM"
-    if t_rank_cols[4].button("📜 Members N-Z", use_container_width=True, key="t_btn_nz"): st.session_state.thresh_rank_tab = "Member_NZ"
-
-    t_tab = st.session_state.thresh_rank_tab
-    if not low_att_df.empty:
-        if t_tab == "Leader": t_filtered = low_att_df[low_att_df["Alliance Rank"].isin(["Alliance Leader", "Deputy"])]
-        elif t_tab == "Officer": t_filtered = low_att_df[low_att_df["Alliance Rank"] == "Officer"]
-        elif t_tab == "Elite": t_filtered = low_att_df[low_att_df["Alliance Rank"] == "Elite"]
-        elif t_tab == "Member_AM": t_filtered = low_att_df[(low_att_df["Alliance Rank"] == "Member") & low_att_df["Player Name"].apply(lambda x: x[0].upper() <= 'M' or not x[0].isalpha())]
-        else: t_filtered = low_att_df[(low_att_df["Alliance Rank"] == "Member") & low_att_df["Player Name"].apply(lambda x: x[0].upper() > 'M' and x[0].isalpha())]
-
-        if not t_filtered.empty:
-            st.dataframe(t_filtered[["Player Name", "Alliance Rank", "Battle Power", "Events Attended", "Attendance %", "Status"]], use_container_width=True, hide_index=True)
-        else:
-            st.success(f"🎉 No accounts in the **{t_tab}** category fall below {threshold}% attendance!")
-    else:
-        st.success(f"🎉 Zero accounts fall below {threshold}% attendance.")
-
-# ---------------------------------------------------------
-# PAGE 3: ALLIANCE OVERVIEW & STATS
-# ---------------------------------------------------------
-elif page == "Alliance Overview & Stats":
-    st.subheader("📊 Alliance Participation Overview")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Roster Members", len(st.session_state.roster_df))
-    c2.metric("Tracked Events", len(set(r["Event"] for r in st.session_state.attendance_records)) if st.session_state.attendance_records else 0)
-    c3.metric("Total Logged Entries", len(st.session_state.attendance_records))
-    st.markdown("---")
-    st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
-
-# ---------------------------------------------------------
-# PAGE 4: UPLOAD SCREENSHOTS (DETAILED PER-FILE FEEDBACK)
-# ---------------------------------------------------------
-elif page == "Upload Event Screenshots":
-    st.subheader("📸 Bulk Screenshot Uploader")
-    passcode = st.text_input("Enter Leadership Passcode to Unlock Uploader:", type="password")
-    if passcode == "rip123":
-        st.success("Passcode accepted!")
-        upload_type = st.radio("Select Upload Type:", ["Event Attendance", "Player Info / Stats"], horizontal=True)
-        if "Attendance" in upload_type:
-            c1, c2 = st.columns(2)
-            selected_event = c1.selectbox("Select Event", st.session_state.events_list)
-            event_date = c2.date_input("Battle Date")
-            entry_mode = st.radio("Logging Mode:", ["Log Non-Attendants ('Not Entered')", "Log Attendants ('Battlers')"], horizontal=True)
-        else:
-            scan_date = st.date_input("Stat Scan Date")
-
-        uploaded_files = st.file_uploader("Choose screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
-        
-        if uploaded_files:
-            st.write(f"📁 **{len(uploaded_files)} image(s) queued for scan.**")
-            if st.button("Process Batch Screenshots"):
-                with st.spinner("Running OCR Parser across screenshots..."):
-                    roster_names = st.session_state.roster_df["Player Name"].tolist()
-                    success_count = 0
-                    
-                    for i, file in enumerate(uploaded_files):
-                        st.markdown(f"---")
-                        st.markdown(f"#### 📄 File {i+1}: `{file.name}`")
-                        
-                        img = Image.open(file)
-                        text = pytesseract.image_to_string(img)
-                        
-                        with st.expander(f"View Image & Raw OCR Text for {file.name}"):
-                            st.image(img, use_column_width=True)
-                            st.text_area("Raw Extracted OCR Text:", value=text, height=120)
-                        
-                        if "Attendance" in upload_type:
-                            matched = False
-                            for name in roster_names:
-                                if name in text:
-                                    st.session_state.attendance_records.append({
-                                        "Event": selected_event,
-                                        "Date": str(event_date),
-                                        "Player": name,
-                                        "Status": "Not Entered" if "Non-Attendants" in entry_mode else "Entered"
-                                    })
-                                    st.success(f"✅ Matched member: **{name}**")
-                                    matched = True
-                                    success_count += 1
-                            if not matched:
-                                st.warning(f"⚠️ No matching alliance names found in `{file.name}`")
-                        else:
-                            p_data = parse_player_info_screenshot(text, roster_names)
-                            p_name = p_data["Player Name"]
-                            
-                            if p_name:
-                                idx = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == p_name].index[0]
-                                
-                                updated_fields = []
-                                numeric_fields = ["Battle Power", "Castle Level", "Lord Level", "Individual Reputation", "Power Ranking", "Kills", "Losses"]
-                                for field in numeric_fields:
-                                    if p_data[field] > 0 and not is_locked(p_name, field):
-                                        st.session_state.roster_df.at[idx, field] = int(p_data[field])
-                                        updated_fields.append(f"{field}: {p_data[field]:,}")
-                                        
-                                if p_data["Military Rank"] and not is_locked(p_name, "Military Rank"):
-                                    st.session_state.roster_df.at[idx, "Military Rank"] = str(p_data["Military Rank"])
-                                    updated_fields.append(f"Military Rank: {p_data['Military Rank']}")
-                                    
-                                save_roster()
-                                success_count += 1
-                                st.success(f"✅ Successfully updated profile for **{p_name}** | Changes: {', '.join(updated_fields) if updated_fields else 'No unlocked fields changed'}")
-                            else:
-                                st.error(f"❌ Failed to match a player name in `{file.name}`. Check if user tag is listed in master roster.")
-
-                    st.markdown("---")
-                    st.success(f"🎉 Batch processing completed! Updated {success_count} profile(s).")
-    elif passcode != "":
-        st.error("Incorrect passcode.")
-
-# ---------------------------------------------------------
-# PAGE 5: ADMIN / ROSTER EDITS
-# ---------------------------------------------------------
-elif page == "Admin / Roster Edits":
-    st.subheader("⚙️ Admin & Roster Edits")
-    passcode = st.text_input("Enter Leadership Passcode to Unlock Admin Tools:", type="password", key="admin_pass")
-    if passcode == "rip123":
-        st.success("Passcode accepted!")
-        with st.expander("💾 CSV Backup & Instant Restore Tools"):
-            c1, c2 = st.columns(2)
-            c1.download_button("📥 Download Roster CSV Backup", data=st.session_state.roster_df.to_csv(index=False).encode('utf-8'), file_name="roster_data_backup.csv", mime="text/csv", use_container_width=True)
-            uploaded_backup = c2.file_uploader("📤 Upload CSV Backup to Restore", type=["csv"], key="restore_uploader")
-            if uploaded_backup is not None:
-                st.session_state.roster_df = pd.read_csv(uploaded_backup)
-                save_roster()
-                st.success("🎉 Roster successfully restored!")
-
-        st.markdown("---")
-        admin_rank_cols = st.columns(5)
-        if admin_rank_cols[0].button("👑 Leaders", use_container_width=True, key="adm_btn_lead"): st.session_state.admin_rank_tab = "Leader"
-        if admin_rank_cols[1].button("🛡️ Officers", use_container_width=True, key="adm_btn_off"): st.session_state.admin_rank_tab = "Officer"
-        if admin_rank_cols[2].button("⚔️ Elites", use_container_width=True, key="adm_btn_elite"): st.session_state.admin_rank_tab = "Elite"
-        if admin_rank_cols[3].button("📜 A-M", use_container_width=True, key="adm_btn_am"): st.session_state.admin_rank_tab = "Member_AM"
-        if admin_rank_cols[4].button("📜 N-Z", use_container_width=True, key="adm_btn_nz"): st.session_state.admin_rank_tab = "Member_NZ"
-
-        adm_tab = st.session_state.admin_rank_tab
-        if adm_tab == "Leader":
+    threshold = st.slider("Select Participation Benchmark (%):", min_value=0, max_value=100,
