@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="RIP Alliance Attendance Tracker", layout="wide")
 
 # ---------------------------------------------------------
-# FORCE DARK WAR & ORDER / RIP ALLIANCE THEME CSS (DAY & NIGHT)
+# CUSTOM WAR & ORDER / RIP ALLIANCE THEME CSS (DAY & NIGHT)
 # ---------------------------------------------------------
 st.markdown(
     """
@@ -178,7 +178,7 @@ def get_player_attendance_stats(p_name):
     return attended_count, all_events_count, pct, len(p_misses)
 
 # ---------------------------------------------------------
-# FUZZY MATCHING & OCR PARSER HELPERS
+# OCR PARSER HELPERS
 # ---------------------------------------------------------
 def clean_text(text):
     return "".join(c for c in text if c.isalnum()).lower()
@@ -214,33 +214,26 @@ def extract_number(text):
 def parse_player_info_screenshot(ocr_text, roster_names):
     lines = [line.strip() for line in ocr_text.split('\n') if line.strip()]
     parsed_data = {
-        "Player Name": None,
-        "Castle Level": 0,
-        "Lord Level": 0,
-        "Individual Reputation": 0,
-        "Military Rank": "",
-        "Power Ranking": 0,
-        "Battle Power": 0,
-        "Kills": 0,
-        "Losses": 0
+        "Player Name": None, "Castle Level": 0, "Lord Level": 0,
+        "Individual Reputation": 0, "Military Rank": "", "Power Ranking": 0,
+        "Battle Power": 0, "Kills": 0, "Losses": 0
     }
     
     for line in lines[:6]:
-        match, score = find_best_roster_match(line, roster_names, cutoff=0.65)
+        match, _ = find_best_roster_match(line, roster_names, cutoff=0.65)
         if match:
             parsed_data["Player Name"] = match
             break
             
     if not parsed_data["Player Name"]:
         for line in lines:
-            match, score = find_best_roster_match(line, roster_names, cutoff=0.75)
+            match, _ = find_best_roster_match(line, roster_names, cutoff=0.75)
             if match:
                 parsed_data["Player Name"] = match
                 break
 
     for i, line in enumerate(lines):
         line_lower = line.lower()
-        
         if "lv." in line_lower:
             num = extract_number(line)
             if num > 0:
@@ -248,49 +241,26 @@ def parse_player_info_screenshot(ocr_text, roster_names):
                     parsed_data["Castle Level"] = num
                 elif "lord" in line_lower or parsed_data["Castle Level"] > 0:
                     parsed_data["Lord Level"] = num
-        
         if "castle" in line_lower:
             num = extract_number(line)
             if num > 0:
                 parsed_data["Castle Level"] = num
-
         if "reputation" in line_lower or "individual" in line_lower:
             val = extract_number(line)
-            if val > 0:
-                parsed_data["Individual Reputation"] = val
-            elif i + 1 < len(lines):
-                parsed_data["Individual Reputation"] = extract_number(lines[i+1])
-
-        if "military rank" in line_lower or ("rank" in line_lower and "power" not in line_lower and "position" not in line_lower):
+            parsed_data["Individual Reputation"] = val if val > 0 else (extract_number(lines[i+1]) if i + 1 < len(lines) else 0)
+        if "military rank" in line_lower or ("rank" in line_lower and "power" not in line_lower):
             parts = line.split(":")
-            if len(parts) > 1 and parts[1].strip():
-                parsed_data["Military Rank"] = parts[1].strip()
-            elif i + 1 < len(lines):
-                parsed_data["Military Rank"] = lines[i+1].strip()
-
+            parsed_data["Military Rank"] = parts[1].strip() if len(parts) > 1 and parts[1].strip() else (lines[i+1].strip() if i + 1 < len(lines) else "")
         if "power ranking" in line_lower or "power rank" in line_lower:
             val = extract_number(line)
-            if val > 0:
-                parsed_data["Power Ranking"] = val
-            elif i + 1 < len(lines):
-                parsed_data["Power Ranking"] = extract_number(lines[i+1])
-
+            parsed_data["Power Ranking"] = val if val > 0 else (extract_number(lines[i+1]) if i + 1 < len(lines) else 0)
         if "battle power" in line_lower or (line_lower == "power" and "ranking" not in line_lower):
             val = extract_number(line)
-            if val > 0:
-                parsed_data["Battle Power"] = val
-            elif i + 1 < len(lines):
-                parsed_data["Battle Power"] = extract_number(lines[i+1])
-
+            parsed_data["Battle Power"] = val if val > 0 else (extract_number(lines[i+1]) if i + 1 < len(lines) else 0)
         if "kills" in line_lower:
-            parsed_data["Kills"] = extract_number(line)
-            if parsed_data["Kills"] == 0 and i + 1 < len(lines):
-                parsed_data["Kills"] = extract_number(lines[i+1])
-                
+            parsed_data["Kills"] = extract_number(line) if extract_number(line) > 0 else (extract_number(lines[i+1]) if i + 1 < len(lines) else 0)
         if "losses" in line_lower:
-            parsed_data["Losses"] = extract_number(line)
-            if parsed_data["Losses"] == 0 and i + 1 < len(lines):
-                parsed_data["Losses"] = extract_number(lines[i+1])
+            parsed_data["Losses"] = extract_number(line) if extract_number(line) > 0 else (extract_number(lines[i+1]) if i + 1 < len(lines) else 0)
 
     return parsed_data
 
@@ -311,20 +281,12 @@ page = st.sidebar.radio("Go to:", [
 # ---------------------------------------------------------
 if page == "Player Profiles":
     st.subheader("👤 Alliance Member Profiles")
-    st.markdown("Select a rank filter below, then tap a member card to view their profile stats.")
-    
     rank_cols = st.columns(5)
-    
-    if rank_cols[0].button("👑 Leaders", use_container_width=True):
-        st.session_state.active_rank_tab = "Leader"
-    if rank_cols[1].button("🛡️ Officers", use_container_width=True):
-        st.session_state.active_rank_tab = "Officer"
-    if rank_cols[2].button("⚔️ Elites", use_container_width=True):
-        st.session_state.active_rank_tab = "Elite"
-    if rank_cols[3].button("📜 A-M", use_container_width=True):
-        st.session_state.active_rank_tab = "Member_AM"
-    if rank_cols[4].button("📜 N-Z", use_container_width=True):
-        st.session_state.active_rank_tab = "Member_NZ"
+    if rank_cols[0].button("👑 Leaders", use_container_width=True): st.session_state.active_rank_tab = "Leader"
+    if rank_cols[1].button("🛡️ Officers", use_container_width=True): st.session_state.active_rank_tab = "Officer"
+    if rank_cols[2].button("⚔️ Elites", use_container_width=True): st.session_state.active_rank_tab = "Elite"
+    if rank_cols[3].button("📜 A-M", use_container_width=True): st.session_state.active_rank_tab = "Member_AM"
+    if rank_cols[4].button("📜 N-Z", use_container_width=True): st.session_state.active_rank_tab = "Member_NZ"
 
     active_tab = st.session_state.active_rank_tab
     if active_tab == "Leader":
@@ -346,7 +308,6 @@ if page == "Player Profiles":
         p_name = row["Player Name"]
         p_bp = row["Battle Power"]
         bp_label = f"{p_bp / 1_000_000:.1f}M" if p_bp > 0 else "0"
-        
         if grid_cols[idx % 2].button(f"🛡️ {p_name}\n⚔️ {bp_label} BP", key=f"card_{p_name}", use_container_width=True):
             st.session_state.selected_player_name = p_name
 
@@ -355,85 +316,201 @@ if page == "Player Profiles":
     st.markdown(f"### ⚔️ Active Profile: **{selected_player}**")
     
     player_row = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == selected_player].iloc[0]
-    
-    attended_count, all_events_count, attendance_pct, missed_count = get_player_attendance_stats(selected_player)
+    attended_count, all_events_count, attendance_pct, _ = get_player_attendance_stats(selected_player)
     player_misses = [r for r in st.session_state.attendance_records if r["Player"] == selected_player]
     
-    bp_disp = f"{player_row['Battle Power']:,}" if player_row['Battle Power'] > 0 else "—"
-    castle_disp = str(player_row['Castle Level']) if player_row['Castle Level'] > 0 else "—"
-    lord_disp = str(player_row['Lord Level']) if player_row['Lord Level'] > 0 else "—"
-    kills_disp = f"{player_row['Kills']:,}" if player_row['Kills'] > 0 else "—"
-    losses_disp = f"{player_row['Losses']:,}" if player_row['Losses'] > 0 else "—"
-    rep_disp = f"{player_row['Individual Reputation']:,}" if player_row['Individual Reputation'] > 0 else "—"
-    power_rank_disp = f"{player_row['Power Ranking']:,}" if player_row['Power Ranking'] > 0 else "—"
-    mil_disp = player_row['Military Rank'] if pd.notna(player_row['Military Rank']) and player_row['Military Rank'] != "" else "—"
-
     r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
     r1_c1.metric("Rank", player_row["Alliance Rank"])
-    r1_c2.metric("Battle Power", bp_disp)
-    r1_c3.metric("Castle Lvl", castle_disp)
-    r1_c4.metric("Lord Lvl", lord_disp)
+    r1_c2.metric("Battle Power", f"{player_row['Battle Power']:,}" if player_row['Battle Power'] > 0 else "—")
+    r1_c3.metric("Castle Lvl", str(player_row['Castle Level']) if player_row['Castle Level'] > 0 else "—")
+    r1_c4.metric("Lord Lvl", str(player_row['Lord Level']) if player_row['Lord Level'] > 0 else "—")
     
     r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
-    r2_c1.metric("Kills", kills_disp)
-    r2_c2.metric("Losses", losses_disp)
-    r2_c3.metric("Power Ranking", power_rank_disp)
-    r2_c4.metric("Military Rank", mil_disp)
+    r2_c1.metric("Kills", f"{player_row['Kills']:,}" if player_row['Kills'] > 0 else "—")
+    r2_c2.metric("Losses", f"{player_row['Losses']:,}" if player_row['Losses'] > 0 else "—")
+    r2_c3.metric("Power Ranking", f"{player_row['Power Ranking']:,}" if player_row['Power Ranking'] > 0 else "—")
+    r2_c4.metric("Military Rank", player_row['Military Rank'] if pd.notna(player_row['Military Rank']) and player_row['Military Rank'] != "" else "—")
 
     r3_c1, r3_c2, r3_c3 = st.columns(3)
-    r3_c1.metric("Reputation", rep_disp)
+    r3_c1.metric("Reputation", f"{player_row['Individual Reputation']:,}" if player_row['Individual Reputation'] > 0 else "—")
     r3_c2.metric("Events Attended", f"{attended_count} / {all_events_count} ({attendance_pct:.1f}%)")
     r3_c3.metric("Status", player_row["Status"])
     
     st.markdown("---")
     st.subheader("📋 Missed Events Log")
     if player_misses:
-        missed_df = pd.DataFrame(player_misses)[["Event", "Date", "Status"]]
-        st.dataframe(missed_df, use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(player_misses)[["Event", "Date", "Status"]], use_container_width=True, hide_index=True)
     else:
-        st.success("🌟 Perfect Attendance! Entered all tracked events.")
-        
-    st.subheader("📈 Battle Power Trend History")
-    p_history = st.session_state.bp_history.get(selected_player, [])
-    if p_history:
-        history_df = pd.DataFrame(p_history)
-        st.line_chart(history_df.set_index("Date"))
-    else:
-        st.info("No historical BP scans recorded yet.")
+        st.success("🌟 Perfect Attendance!")
 
 # ---------------------------------------------------------
 # PAGE 2: ATTENDANCE THRESHOLDS
 # ---------------------------------------------------------
 elif page == "Attendance Thresholds":
     st.subheader("🎯 Low Attendance Audit & Rank Minimums")
-    st.markdown("Choose a target participation percentage below to view all accounts performing below that threshold, categorized by alliance rank.")
-    
     threshold = st.slider("Select Participation Benchmark (%):", min_value=0, max_value=100, value=70, step=5)
     
     low_att_list = []
-    for idx, row in st.session_state.roster_df.iterrows():
+    for _, row in st.session_state.roster_df.iterrows():
         p_name = row["Player Name"]
-        att_cnt, total_cnt, pct, miss_cnt = get_player_attendance_stats(p_name)
+        att_cnt, total_cnt, pct, _ = get_player_attendance_stats(p_name)
         if pct < threshold:
-            low_att_list.append({
-                "Player Name": p_name,
-                "Alliance Rank": row["Alliance Rank"],
-                "Battle Power": row["Battle Power"],
-                "Events Attended": f"{att_cnt} / {total_cnt}",
-                "Attendance %": f"{pct:.1f}%",
-                "Status": row["Status"]
-            })
+            low_att_list.append({"Player Name": p_name, "Alliance Rank": row["Alliance Rank"], "Battle Power": row["Battle Power"], "Events Attended": f"{att_cnt} / {total_cnt}", "Attendance %": f"{pct:.1f}%", "Status": row["Status"]})
             
     low_att_df = pd.DataFrame(low_att_list)
     st.markdown(f"### ⚠️ Accounts Below **{threshold}%** Participation ({len(low_att_df)} Total)")
     
     t_rank_cols = st.columns(5)
-    if t_rank_cols[0].button("👑 Leaders", use_container_width=True, key="t_btn_lead"):
-        st.session_state.thresh_rank_tab = "Leader"
-    if t_rank_cols[1].button("🛡️ Officers", use_container_width=True, key="t_btn_off"):
-        st.session_state.thresh_rank_tab = "Officer"
-    if t_rank_cols[2].button("⚔️ Elites", use_container_width=True, key="t_btn_elite"):
-        st.session_state.thresh_rank_tab = "Elite"
-    if t_rank_cols[3].button("📜 Members A-M", use_container_width=True, key="t_btn_am"):
-        st.session_state.thresh_rank_tab = "Member_AM"
-    if t_rank_cols[4].button("📜 Members N-Z", use_container_width=True, key="t_
+    if t_rank_cols[0].button("👑 Leaders", use_container_width=True, key="t_btn_lead"): st.session_state.thresh_rank_tab = "Leader"
+    if t_rank_cols[1].button("🛡️ Officers", use_container_width=True, key="t_btn_off"): st.session_state.thresh_rank_tab = "Officer"
+    if t_rank_cols[2].button("⚔️ Elites", use_container_width=True, key="t_btn_elite"): st.session_state.thresh_rank_tab = "Elite"
+    if t_rank_cols[3].button("📜 Members A-M", use_container_width=True, key="t_btn_am"): st.session_state.thresh_rank_tab = "Member_AM"
+    if t_rank_cols[4].button("📜 Members N-Z", use_container_width=True, key="t_btn_nz"): st.session_state.thresh_rank_tab = "Member_NZ"
+
+    t_tab = st.session_state.thresh_rank_tab
+    if not low_att_df.empty:
+        if t_tab == "Leader": t_filtered = low_att_df[low_att_df["Alliance Rank"].isin(["Alliance Leader", "Deputy"])]
+        elif t_tab == "Officer": t_filtered = low_att_df[low_att_df["Alliance Rank"] == "Officer"]
+        elif t_tab == "Elite": t_filtered = low_att_df[low_att_df["Alliance Rank"] == "Elite"]
+        elif t_tab == "Member_AM": t_filtered = low_att_df[(low_att_df["Alliance Rank"] == "Member") & low_att_df["Player Name"].apply(lambda x: x[0].upper() <= 'M' or not x[0].isalpha())]
+        else: t_filtered = low_att_df[(low_att_df["Alliance Rank"] == "Member") & low_att_df["Player Name"].apply(lambda x: x[0].upper() > 'M' and x[0].isalpha())]
+
+        if not t_filtered.empty:
+            st.dataframe(t_filtered[["Player Name", "Alliance Rank", "Battle Power", "Events Attended", "Attendance %", "Status"]], use_container_width=True, hide_index=True)
+        else:
+            st.success(f"🎉 No accounts in the **{t_tab}** category fall below {threshold}% attendance!")
+    else:
+        st.success(f"🎉 Zero accounts fall below {threshold}% attendance.")
+
+# ---------------------------------------------------------
+# PAGE 3: ALLIANCE OVERVIEW & STATS
+# ---------------------------------------------------------
+elif page == "Alliance Overview & Stats":
+    st.subheader("📊 Alliance Participation Overview")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Roster Members", len(st.session_state.roster_df))
+    c2.metric("Tracked Events", len(set(r["Event"] for r in st.session_state.attendance_records)) if st.session_state.attendance_records else 0)
+    c3.metric("Total Logged Entries", len(st.session_state.attendance_records))
+    st.markdown("---")
+    st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
+
+# ---------------------------------------------------------
+# PAGE 4: UPLOAD SCREENSHOTS
+# ---------------------------------------------------------
+elif page == "Upload Event Screenshots":
+    st.subheader("📸 Bulk Screenshot Uploader")
+    passcode = st.text_input("Enter Leadership Passcode to Unlock Uploader:", type="password")
+    if passcode == "rip123":
+        st.success("Passcode accepted!")
+        upload_type = st.radio("Select Upload Type:", ["Event Attendance", "Player Info / Stats"], horizontal=True)
+        if "Attendance" in upload_type:
+            c1, c2 = st.columns(2)
+            selected_event = c1.selectbox("Select Event", st.session_state.events_list)
+            event_date = c2.date_input("Battle Date")
+            entry_mode = st.radio("Logging Mode:", ["Log Non-Attendants ('Not Entered')", "Log Attendants ('Battlers')"], horizontal=True)
+        else:
+            scan_date = st.date_input("Stat Scan Date")
+
+        uploaded_files = st.file_uploader("Choose screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+        if uploaded_files and st.button("Process Batch Screenshots"):
+            with st.spinner("Running OCR Parser..."):
+                roster_names = st.session_state.roster_df["Player Name"].tolist()
+                success_count = 0
+                for file in uploaded_files:
+                    text = pytesseract.image_to_string(Image.open(file))
+                    if "Attendance" in upload_type:
+                        for name in roster_names:
+                            if name in text:
+                                st.session_state.attendance_records.append({"Event": selected_event, "Date": str(event_date), "Player": name, "Status": "Not Entered" if "Non-Attendants" in entry_mode else "Entered"})
+                                success_count += 1
+                    else:
+                        p_data = parse_player_info_screenshot(text, roster_names)
+                        p_name = p_data["Player Name"]
+                        if p_name:
+                            idx = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == p_name].index[0]
+                            for field, key in [("Battle Power", "Battle Power"), ("Castle Level", "Castle Level"), ("Lord Level", "Lord Level"), ("Individual Reputation", "Individual Reputation"), ("Power Ranking", "Power Ranking"), ("Military Rank", "Military Rank"), ("Kills", "Kills"), ("Losses", "Losses")]:
+                                if p_data[field] and not is_locked(p_name, field):
+                                    st.session_state.roster_df.at[idx, field] = p_data[field]
+                            save_roster()
+                            success_count += 1
+                st.success(f"Successfully updated {success_count} record(s).")
+    elif passcode != "":
+        st.error("Incorrect passcode.")
+
+# ---------------------------------------------------------
+# PAGE 5: ADMIN / ROSTER EDITS
+# ---------------------------------------------------------
+elif page == "Admin / Roster Edits":
+    st.subheader("⚙️ Admin & Roster Edits")
+    passcode = st.text_input("Enter Leadership Passcode to Unlock Admin Tools:", type="password", key="admin_pass")
+    if passcode == "rip123":
+        st.success("Passcode accepted!")
+        with st.expander("💾 CSV Backup & Instant Restore Tools"):
+            c1, c2 = st.columns(2)
+            c1.download_button("📥 Download Roster CSV Backup", data=st.session_state.roster_df.to_csv(index=False).encode('utf-8'), file_name="roster_data_backup.csv", mime="text/csv", use_container_width=True)
+            uploaded_backup = c2.file_uploader("📤 Upload CSV Backup to Restore", type=["csv"], key="restore_uploader")
+            if uploaded_backup is not None:
+                st.session_state.roster_df = pd.read_csv(uploaded_backup)
+                save_roster()
+                st.success("🎉 Roster successfully restored!")
+
+        st.markdown("---")
+        admin_rank_cols = st.columns(5)
+        if admin_rank_cols[0].button("👑 Leaders", use_container_width=True, key="adm_btn_lead"): st.session_state.admin_rank_tab = "Leader"
+        if admin_rank_cols[1].button("🛡️ Officers", use_container_width=True, key="adm_btn_off"): st.session_state.admin_rank_tab = "Officer"
+        if admin_rank_cols[2].button("⚔️ Elites", use_container_width=True, key="adm_btn_elite"): st.session_state.admin_rank_tab = "Elite"
+        if admin_rank_cols[3].button("📜 A-M", use_container_width=True, key="adm_btn_am"): st.session_state.admin_rank_tab = "Member_AM"
+        if admin_rank_cols[4].button("📜 N-Z", use_container_width=True, key="adm_btn_nz"): st.session_state.admin_rank_tab = "Member_NZ"
+
+        adm_tab = st.session_state.admin_rank_tab
+        if adm_tab == "Leader": admin_filtered_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"].isin(["Alliance Leader", "Deputy"])]
+        elif adm_tab == "Officer": admin_filtered_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Officer"]
+        elif adm_tab == "Elite": admin_filtered_df = st.session_state.roster_df[st.session_state.roster_df["Alliance Rank"] == "Elite"]
+        elif adm_tab == "Member_AM": admin_filtered_df = st.session_state.roster_df[(st.session_state.roster_df["Alliance Rank"] == "Member") & st.session_state.roster_df["Player Name"].apply(lambda x: x[0].upper() <= 'M' or not x[0].isalpha())]
+        else: admin_filtered_df = st.session_state.roster_df[(st.session_state.roster_df["Alliance Rank"] == "Member") & st.session_state.roster_df["Player Name"].apply(lambda x: x[0].upper() > 'M' and x[0].isalpha())]
+
+        player_options = sorted(admin_filtered_df["Player Name"].unique().tolist())
+        if player_options:
+            target_player = st.selectbox("Select Player to Edit", player_options)
+            current_row = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == target_player].iloc[0]
+            
+            with st.form(key=f"edit_form_{target_player}"):
+                st.markdown(f"#### Editing Profile: **{target_player}**")
+                new_name = st.text_input("New Name (Leave blank to keep current)", value="")
+                new_rank = st.selectbox("Alliance Rank", ["Alliance Leader", "Deputy", "Officer", "Elite", "Member"], index=["Alliance Leader", "Deputy", "Officer", "Elite", "Member"].index(current_row["Alliance Rank"]) if current_row["Alliance Rank"] in ["Alliance Leader", "Deputy", "Officer", "Elite", "Member"] else 4)
+                new_status = st.selectbox("Status", ["Active", "Inactive"], index=0 if current_row["Status"] == "Active" else 1)
+                
+                st.markdown("---")
+                st.markdown("#### Stats & Field Locks")
+                
+                fields = [("Battle Power", int(current_row["Battle Power"]), 100000), ("Castle Level", int(current_row["Castle Level"]), 1), ("Kills", int(current_row["Kills"]), 10000), ("Losses", int(current_row["Losses"]), 1000), ("Lord Level", int(current_row["Lord Level"]), 1), ("Individual Reputation", int(current_row["Individual Reputation"]), 10000), ("Power Ranking", int(current_row["Power Ranking"]), 1)]
+                new_vals = {}
+                locks = {}
+                for f_name, f_val, f_step in fields:
+                    c1, c2 = st.columns([3, 1])
+                    new_vals[f_name] = c1.number_input(f_name, value=f_val, step=f_step)
+                    locks[f_name] = c2.checkbox(f"🔒 Lock", value=is_locked(target_player, f_name), key=f"l_{f_name}_{target_player}")
+                
+                c1, c2 = st.columns([3, 1])
+                current_mil = current_row["Military Rank"] if pd.notna(current_row["Military Rank"]) else ""
+                new_mil_rank = c1.text_input("Military Rank", value=current_mil)
+                locks["Military Rank"] = c2.checkbox("🔒 Lock", value=is_locked(target_player, "Military Rank"), key=f"l_mil_{target_player}")
+                
+                if st.form_submit_button("Save Player Updates & Locks"):
+                    idx = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == target_player].index[0]
+                    if new_name.strip():
+                        st.session_state.roster_df.at[idx, "Player Name"] = new_name.strip()
+                        target_player = new_name.strip()
+                    st.session_state.roster_df.at[idx, "Alliance Rank"] = new_rank
+                    st.session_state.roster_df.at[idx, "Status"] = new_status
+                    for f_name, val in new_vals.items():
+                        st.session_state.roster_df.at[idx, f_name] = val
+                        set_lock(target_player, f_name, locks[f_name])
+                    st.session_state.roster_df.at[idx, "Military Rank"] = new_mil_rank
+                    set_lock(target_player, "Military Rank", locks["Military Rank"])
+                    save_roster()
+                    st.success(f"Successfully updated records for {target_player}!")
+        else:
+            st.warning("No players found in this rank category.")
+    elif passcode != "":
+        st.error("Incorrect passcode.")
