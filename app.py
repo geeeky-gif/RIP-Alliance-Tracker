@@ -353,4 +353,21 @@ if page == "Player Profiles":
 # ---------------------------------------------------------
 elif page == "Attendance Thresholds":
     st.subheader("🎯 Low Attendance Audit & Rank Minimums")
-    threshold = st.slider("Select Participation Benchmark (%):", min_value=0, max_value=100,
+    threshold = st.slider("Select Participation Benchmark (%):", min_value=0, max_value=100, value=70, step=5)
+    
+    low_att_list = []
+    for _, row in st.session_state.roster_df.iterrows():
+        p_name = row["Player Name"]
+        att_cnt, total_cnt, pct, _ = get_player_attendance_stats(p_name)
+        if pct < threshold:
+            low_att_list.append({"Player Name": p_name, "Alliance Rank": row["Alliance Rank"], "Battle Power": row["Battle Power"], "Events Attended": f"{att_cnt} / {total_cnt}", "Attendance %": f"{pct:.1f}%", "Status": row["Status"]})
+            
+    low_att_df = pd.DataFrame(low_att_list)
+    st.markdown(f"### ⚠️ Accounts Below **{threshold}%** Participation ({len(low_att_df)} Total)")
+    
+    t_rank_cols = st.columns(5)
+    if t_rank_cols[0].button("👑 Leaders", use_container_width=True, key="t_btn_lead"):
+        st.session_state.thresh_rank_tab = "Leader"
+    if t_rank_cols[1].button("🛡️ Officers", use_container_width=True, key="t_btn_off"):
+        st.session_state.thresh_rank_tab = "Officer"
+    if t_rank_cols[2].button("⚔️ Elites", use_container_width=True, key="t_btn_
