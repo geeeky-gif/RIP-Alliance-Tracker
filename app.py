@@ -89,7 +89,6 @@ ROSTER_FILE = "roster_data.csv"
 LOCKS_FILE = "field_locks.csv"
 HISTORY_FILE = "bp_history.csv"
 
-# Load Master Roster from CSV (Falls back to default if missing)
 if 'roster_df' not in st.session_state:
     if os.path.exists(ROSTER_FILE):
         st.session_state.roster_df = pd.read_csv(ROSTER_FILE)
@@ -112,7 +111,6 @@ if 'roster_df' not in st.session_state:
 def save_roster():
     st.session_state.roster_df.to_csv(ROSTER_FILE, index=False)
 
-# Load or Initialize Field Locks
 if 'locks_df' not in st.session_state:
     if os.path.exists(LOCKS_FILE):
         st.session_state.locks_df = pd.read_csv(LOCKS_FILE)
@@ -151,7 +149,6 @@ if 'admin_rank_tab' not in st.session_state:
 if 'thresh_rank_tab' not in st.session_state:
     st.session_state.thresh_rank_tab = "Leader"
 
-# Load or Initialize BP History
 if 'bp_history' not in st.session_state:
     if os.path.exists(HISTORY_FILE):
         hist_df = pd.read_csv(HISTORY_FILE)
@@ -368,4 +365,33 @@ if page == "Player Profiles":
     kills_disp = f"{player_row['Kills']:,}" if player_row['Kills'] > 0 else "—"
     losses_disp = f"{player_row['Losses']:,}" if player_row['Losses'] > 0 else "—"
     rep_disp = f"{player_row['Individual Reputation']:,}" if player_row['Individual Reputation'] > 0 else "—"
-    power_rank_disp = f"{player_row['Power Ranking']:,}" if player_row
+    power_rank_disp = f"{player_row['Power Ranking']:,}" if player_row['Power Ranking'] > 0 else "—"
+    mil_disp = player_row['Military Rank'] if pd.notna(player_row['Military Rank']) and player_row['Military Rank'] != "" else "—"
+
+    r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
+    r1_c1.metric("Rank", player_row["Alliance Rank"])
+    r1_c2.metric("Battle Power", bp_disp)
+    r1_c3.metric("Castle Lvl", castle_disp)
+    r1_c4.metric("Lord Lvl", lord_disp)
+    
+    r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
+    r2_c1.metric("Kills", kills_disp)
+    r2_c2.metric("Losses", losses_disp)
+    r2_c3.metric("Power Ranking", power_rank_disp)
+    r2_c4.metric("Military Rank", mil_disp)
+
+    r3_c1, r3_c2, r3_c3 = st.columns(3)
+    r3_c1.metric("Reputation", rep_disp)
+    r3_c2.metric("Events Attended", f"{attended_count} / {all_events_count} ({attendance_pct:.1f}%)")
+    r3_c3.metric("Status", player_row["Status"])
+    
+    st.markdown("---")
+    st.subheader("📋 Missed Events Log")
+    if player_misses:
+        missed_df = pd.DataFrame(player_misses)[["Event", "Date", "Status"]]
+        st.dataframe(missed_df, use_container_width=True, hide_index=True)
+    else:
+        st.success("🌟 Perfect Attendance! Entered all tracked events.")
+        
+    st.subheader("📈 Battle Power Trend History")
+    p_history = st.session_state.bp_history.
