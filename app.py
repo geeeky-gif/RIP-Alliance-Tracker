@@ -188,7 +188,6 @@ if 'admin_rank_tab' not in st.session_state:
 if 'thresh_rank_tab' not in st.session_state:
     st.session_state.thresh_rank_tab = "Leader"
 
-# ALL 10 WAR & ORDER ALLIANCE EVENTS
 if 'events_list' not in st.session_state:
     st.session_state.events_list = [
         "Elite Wars", 
@@ -211,7 +210,8 @@ if 'attendance_records' not in st.session_state:
         try:
             att_df = pd.read_csv(ATTENDANCE_FILE)
             if not att_df.empty:
-                att_df["Session ID"] = att_df["Date"].astype(str) + "_" + att_df["Event"].astype(str)
+                if "Session ID" not in att_df.columns:
+                    att_df["Session ID"] = att_df["Date"].astype(str) + "_" + att_df["Event"].astype(str)
                 st.session_state.attendance_records = att_df.to_dict('records')
             else:
                 st.session_state.attendance_records = []
@@ -223,7 +223,8 @@ if 'attendance_records' not in st.session_state:
 def save_attendance():
     if st.session_state.attendance_records:
         df = pd.DataFrame(st.session_state.attendance_records)
-        df["Session ID"] = df["Date"].astype(str) + "_" + df["Event"].astype(str)
+        if "Session ID" not in df.columns:
+            df["Session ID"] = df["Date"].astype(str) + "_" + df["Event"].astype(str)
         df.to_csv(ATTENDANCE_FILE, index=False)
     else:
         pd.DataFrame(columns=["Event", "Date", "Status", "Player", "Session ID"]).to_csv(ATTENDANCE_FILE, index=False)
@@ -291,6 +292,39 @@ def extract_number(text):
         return int(nums[0].replace(',', ''))
     return 0
 
+def extract_screenshot_date(ocr_text):
+    """
+    Extracts MM-DD or MM/DD from screenshot headers (e.g. '10-16') 
+    and automatically appends current year 2026 -> 2026-10-16.
+    """
+    lines = [line.strip() for line in ocr_text.split('\n') if line.strip()]
+    current_year = "2026"
+    
+    # Priority 1: Check header lines for "battle time", "time", or "period"
+    for line in lines[:10]:
+        line_lower = line.lower()
+        if any(keyword in line_lower for keyword in ["time", "battle", "period", "date"]):
+            # Match full YYYY-MM-DD format first
+            full_match = re.search(r'\b(20\d{2}[./-]\d{1,2}[./-]\d{1,2})\b', line)
+            if full_match:
+                return full_match.group(0).replace('.', '-').replace('/', '-')
+            
+            # Match short MM-DD or MM/DD format (e.g. 10-16 or 10/16)
+            short_match = re.search(r'\b(\d{1,2}[./-]\d{1,2})\b', line)
+            if short_match:
+                parts = re.split(r'[./-]', short_match.group(0))
+                if len(parts) == 2:
+                    return f"{current_year}-{parts[0].zfill(2)}-{parts[1].zfill(2)}"
+
+    # Priority 2: General scan across full text for short MM-DD / MM/DD
+    general_short = re.search(r'\b(\d{1,2}[./-]\d{1,2})\b', ocr_text)
+    if general_short:
+        parts = re.split(r'[./-]', general_short.group(0))
+        if len(parts) == 2 and 1 <= int(parts[0]) <= 12 and 1 <= int(parts[1]) <= 31:
+            return f"{current_year}-{parts[0].zfill(2)}-{parts[1].zfill(2)}"
+
+    return "Unknown Date"
+
 def parse_attendance_screenshot_auto(ocr_text, roster_names, events_list):
     text_lower = ocr_text.lower()
     cleaned_ocr = clean_text(ocr_text)
@@ -323,8 +357,7 @@ def parse_attendance_screenshot_auto(ocr_text, roster_names, events_list):
                 detected_event = ev
                 break
 
-    date_match = re.search(r'\b(20\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]20\d{2}|\d{1,2}[-/]\d{1,2}[-/]\d{2})\b', ocr_text)
-    detected_date = date_match.group(0) if date_match else str(datetime.now().date())
+    detected_date = extract_screenshot_date(ocr_text)
 
     status_val = "Not Entered" if ("not entered" in text_lower or "unregistered" in text_lower or "absent" in text_lower) else "Entered"
 
@@ -598,13 +631,15 @@ elif page == "Admin & Operations Hub":
         file_uploader_key = f"screenshot_uploader_{st.session_state.uploader_key_counter}"
         
         if "Attendance" in upload_type:
-            st.markdown("💡 *Drop multiple screenshots below. Select an event override to bypass OCR event title scanning.*")
+            st.markdown("💡 *Drop multiple screenshots below. Each batch upload gets a unique session tag, allowing multiple events on the same day.*")
             
-            # --- UPLOAD TIME EVENT OVERRIDE ---
-            event_override_choice = st.selectbox(
-                "📌 Upload Event Override (Optional - forces event type):", 
+            # --- UPLOAD TIME EVENT OVERRIDE & SESSION IDENTIFIER ---
+            col_ov1, col_ov2 = st.columns(2)
+            event_override_choice = col_ov1.selectbox(
+                "📌 Upload Event Override (Optional):", 
                 ["Auto-Detect from Screenshot"] + st.session_state.events_list
             )
+            session_suffix_tag = col_ov2.text_input("🏷️ Session Suffix / Batch ID (Optional - separates same-day events):", value="", placeholder="e.g. War 1, Round 2")
             
             uploaded_files = st.file_uploader("Choose attendance screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=file_uploader_key)
             
@@ -621,6 +656,8 @@ elif page == "Admin & Operations Hub":
                     roster_names = st.session_state.roster_df["Player Name"].tolist()
                     success_count = 0
                     
+                    batch_stamp = int(datetime.now().timestamp())
+                    
                     for file in uploaded_files:
                         text = pytesseract.image_to_string(Image.open(file))
                         detected_event, detected_date, status_val, matched_players = parse_attendance_screenshot_auto(text, roster_names, st.session_state.events_list)
@@ -628,7 +665,11 @@ elif page == "Admin & Operations Hub":
                         if event_override_choice != "Auto-Detect from Screenshot":
                             detected_event = event_override_choice
                         
-                        session_id = f"{detected_date}_{detected_event}"
+                        # Unique session ID allowing multiple rounds/events on the same date
+                        if session_suffix_tag.strip():
+                            session_id = f"{detected_date}_{detected_event}_{session_suffix_tag.strip()}"
+                        else:
+                            session_id = f"{detected_date}_{detected_event}_{batch_stamp}"
                         
                         for name in matched_players:
                             existing_match = [
@@ -645,7 +686,7 @@ elif page == "Admin & Operations Hub":
                                 })
                                 success_count += 1
                     save_attendance()
-                    st.success(f"Successfully processed {len(uploaded_files)} screenshot(s) under **{event_override_choice if event_override_choice != 'Auto-Detect from Screenshot' else 'Auto-Detected'}** and recorded {success_count} new entries! CSV updated.")
+                    st.success(f"Successfully processed {len(uploaded_files)} screenshot(s) and recorded {success_count} new entries! CSV updated.")
         else:
             uploaded_files = st.file_uploader("Choose player stats screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=file_uploader_key)
             
@@ -704,17 +745,17 @@ elif page == "Admin & Operations Hub":
                 save_attendance()
                 st.success("🎉 Attendance records successfully restored!")
 
-        # --- SECTION 3: MANUAL ATTENDANCE, RE-SWAP & SESSION DELETION ---
-        with st.expander("📝 Manual Event Attendance Management & Session Swapping"):
+        # --- SECTION 3: MANUAL ATTENDANCE, RE-SWAP & EDIT SESSIONS ---
+        with st.expander("📝 Manual Event Attendance Management & Session Editing"):
             st.markdown("#### Add Attendance Entry Manually")
             with st.form("manual_attendance_form"):
                 m_event = st.selectbox("Event Type", st.session_state.events_list)
-                m_date = st.date_input("Event Date")
+                m_date = st.text_input("Event Date (YYYY-MM-DD)", value="2026-10-16")
                 m_player = st.selectbox("Player Name", sorted(st.session_state.roster_df["Player Name"].tolist()))
                 m_status = st.selectbox("Status", ["Entered", "Not Entered"])
                 
                 if st.form_submit_button("Add Attendance Record"):
-                    session_id = f"{m_date}_{m_event}"
+                    session_id = f"{m_date}_{m_event}_manual"
                     st.session_state.attendance_records.append({
                         "Event": m_event,
                         "Date": str(m_date),
@@ -726,8 +767,8 @@ elif page == "Admin & Operations Hub":
                     st.success(f"Added record for {m_player} ({m_event}) and saved to CSV!")
 
             st.markdown("---")
-            st.markdown("#### 🔄 Swap / Correct Existing Session Event Type")
-            st.markdown("💡 *If an event was logged incorrectly (e.g., logged as Elite Wars instead of Fortress War), select it below and change its event type.*")
+            st.markdown("#### 🔄 Fix / Edit Existing Session Details (Event & Date)")
+            st.markdown("💡 *If an event was logged with an incorrect date or event type, fix it here without re-uploading.*")
             
             if st.session_state.attendance_records:
                 att_df_inspect = pd.DataFrame(st.session_state.attendance_records)
@@ -736,25 +777,26 @@ elif page == "Admin & Operations Hub":
                     
                     with st.form("swap_session_form"):
                         selected_session_to_swap = st.selectbox(
-                            "Select Recorded Session to Fix/Swap", 
+                            "Select Recorded Session to Edit", 
                             options=session_options,
-                            format_func=lambda x: f"{x['Event']} on {x['Date']}"
+                            format_func=lambda x: f"{x['Event']} on {x['Date']} (ID: {x['Session ID']})"
                         )
-                        new_event_target = st.selectbox("Change Event Type To:", st.session_state.events_list)
+                        new_event_target = st.selectbox("Correct Event Type To:", st.session_state.events_list)
+                        new_date_target = st.text_input("Correct Event Date (YYYY-MM-DD):", value=selected_session_to_swap["Date"] if selected_session_to_swap else "")
                         
-                        swap_submitted = st.form_submit_button("🔄 Swap Event Type")
+                        swap_submitted = st.form_submit_button("🔄 Update Session Details")
                         if swap_submitted and selected_session_to_swap:
                             old_id = selected_session_to_swap["Session ID"]
-                            target_date = selected_session_to_swap["Date"]
-                            new_id = f"{target_date}_{new_event_target}"
+                            new_id = f"{new_date_target.strip()}_{new_event_target}_{int(datetime.now().timestamp())}"
                             
                             for record in st.session_state.attendance_records:
                                 if isinstance(record, dict) and record.get("Session ID") == old_id:
                                     record["Event"] = new_event_target
+                                    record["Date"] = new_date_target.strip()
                                     record["Session ID"] = new_id
                             
                             save_attendance()
-                            st.success(f"Successfully swapped session from **{selected_session_to_swap['Event']}** to **{new_event_target}**! All associated entries updated.")
+                            st.success(f"Successfully updated session to **{new_event_target}** on **{new_date_target}**!")
                             st.rerun()
 
                 st.markdown("---")
@@ -762,7 +804,7 @@ elif page == "Admin & Operations Hub":
                 selected_session_to_delete = st.selectbox(
                     "Select Session to Delete (Event & Date)", 
                     options=session_options if "Session ID" in att_df_inspect.columns else [],
-                    format_func=lambda x: f"{x['Event']} on {x['Date']}",
+                    format_func=lambda x: f"{x['Event']} on {x['Date']} (ID: {x['Session ID']})",
                     key="delete_session_select"
                 )
                 
@@ -843,7 +885,7 @@ elif page == "Admin & Operations Hub":
 
                 c1, c2 = st.columns([3, 1])
                 curr_mil = str(current_row["Military Rank"]) if pd.notna(current_row["Military Rank"]) else ""
-                mil_idx = MILITARY_RANK_OPTIONS.index(curr_mil) if curr_mil in MILITARY_RANK_OPTIONS else 0
+                mil_idx = MILITARY_RANK_OPTIONS.index(curr_mil) if MILITARY_RANK_OPTIONS else 0
                 new_mil = c1.selectbox("Military Rank", MILITARY_RANK_OPTIONS, index=mil_idx)
                 lock_mil = c2.checkbox("🔒 Lock", value=is_locked(target_player, "Military Rank"), key=f"l_mil_{target_player}")
 
