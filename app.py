@@ -188,8 +188,20 @@ if 'admin_rank_tab' not in st.session_state:
 if 'thresh_rank_tab' not in st.session_state:
     st.session_state.thresh_rank_tab = "Leader"
 
+# ALL 10 WAR & ORDER ALLIANCE EVENTS
 if 'events_list' not in st.session_state:
-    st.session_state.events_list = ["Elite Wars", "Fortress War", "Realm Invasion", "Void War", "Territory Defense", "Elite Adventure"]
+    st.session_state.events_list = [
+        "Elite Wars", 
+        "Fortress War", 
+        "Realm Conquest", 
+        "Realm Invasion", 
+        "Territory Defense", 
+        "Territory Expulsion", 
+        "Alliance Conquest", 
+        "Frenzy", 
+        "Void", 
+        "Elite Adventures"
+    ]
 
 if 'uploader_key_counter' not in st.session_state:
     st.session_state.uploader_key_counter = 0
@@ -286,14 +298,22 @@ def parse_attendance_screenshot_auto(ocr_text, roster_names, events_list):
     detected_event = "Elite Wars"
     if "fortress" in text_lower or "fortress" in cleaned_ocr:
         detected_event = "Fortress War"
-    elif "realm" in text_lower or "invasion" in text_lower or "realm" in cleaned_ocr or "invasion" in cleaned_ocr:
-        detected_event = "Realm Invasion"
-    elif "void" in text_lower or "void" in cleaned_ocr:
-        detected_event = "Void War"
-    elif "territory" in text_lower or "defense" in text_lower or "territory" in cleaned_ocr:
+    elif "expulsion" in text_lower or "expulsion" in cleaned_ocr:
+        detected_event = "Territory Expulsion"
+    elif "territory" in text_lower or "defense" in text_lower:
         detected_event = "Territory Defense"
-    elif "elite" in text_lower and "adventure" in text_lower:
-        detected_event = "Elite Adventure"
+    elif "realm" in text_lower and "conquest" in text_lower:
+        detected_event = "Realm Conquest"
+    elif "realm" in text_lower or "invasion" in text_lower:
+        detected_event = "Realm Invasion"
+    elif "alliance" in text_lower and "conquest" in text_lower:
+        detected_event = "Alliance Conquest"
+    elif "frenzy" in text_lower or "frenzy" in cleaned_ocr:
+        detected_event = "Frenzy"
+    elif "void" in text_lower or "void" in cleaned_ocr:
+        detected_event = "Void"
+    elif "adventure" in text_lower or "adventures" in text_lower:
+        detected_event = "Elite Adventures"
     elif "elite" in text_lower or "wars" in text_lower:
         detected_event = "Elite Wars"
     else:
@@ -303,7 +323,7 @@ def parse_attendance_screenshot_auto(ocr_text, roster_names, events_list):
                 detected_event = ev
                 break
 
-    date_match = re.search(r'\b(20\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]20\d{2}|\d{1,2}[-/]\d{1,2}[-/]22\d{2}|[A-Za-z]+\s+\d{1,2},\s*20\d{2})\b', ocr_text)
+    date_match = re.search(r'\b(20\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]20\d{2}|\d{1,2}[-/]\d{1,2}[-/]\d{2})\b', ocr_text)
     detected_date = date_match.group(0) if date_match else str(datetime.now().date())
 
     status_val = "Not Entered" if ("not entered" in text_lower or "unregistered" in text_lower or "absent" in text_lower) else "Entered"
@@ -578,11 +598,11 @@ elif page == "Admin & Operations Hub":
         file_uploader_key = f"screenshot_uploader_{st.session_state.uploader_key_counter}"
         
         if "Attendance" in upload_type:
-            st.markdown("💡 *Drop multiple screenshots below. Use the Event Override dropdown if you want to force a specific event type.*")
+            st.markdown("💡 *Drop multiple screenshots below. Select an event override to bypass OCR event title scanning.*")
             
-            # --- UPLOAD EVENT OVERRIDE ---
+            # --- UPLOAD TIME EVENT OVERRIDE ---
             event_override_choice = st.selectbox(
-                "📌 Upload Event Override (Optional - bypasses OCR event detection):", 
+                "📌 Upload Event Override (Optional - forces event type):", 
                 ["Auto-Detect from Screenshot"] + st.session_state.events_list
             )
             
@@ -720,7 +740,7 @@ elif page == "Admin & Operations Hub":
                             options=session_options,
                             format_func=lambda x: f"{x['Event']} on {x['Date']}"
                         )
-                        new_event_target = st.selectbox("Change Event Type To:", st.events_list if 'events_list' in st.session_state else ["Elite Wars", "Fortress War", "Realm Invasion", "Void War", "Territory Defense", "Elite Adventure"])
+                        new_event_target = st.selectbox("Change Event Type To:", st.session_state.events_list)
                         
                         swap_submitted = st.form_submit_button("🔄 Swap Event Type")
                         if swap_submitted and selected_session_to_swap:
@@ -728,7 +748,6 @@ elif page == "Admin & Operations Hub":
                             target_date = selected_session_to_swap["Date"]
                             new_id = f"{target_date}_{new_event_target}"
                             
-                            # Update all records matching this session ID
                             for record in st.session_state.attendance_records:
                                 if isinstance(record, dict) and record.get("Session ID") == old_id:
                                     record["Event"] = new_event_target
@@ -742,7 +761,7 @@ elif page == "Admin & Operations Hub":
                 st.markdown("#### 🗑️ Target & Delete Specific Sessions")
                 selected_session_to_delete = st.selectbox(
                     "Select Session to Delete (Event & Date)", 
-                    options=session_options,
+                    options=session_options if "Session ID" in att_df_inspect.columns else [],
                     format_func=lambda x: f"{x['Event']} on {x['Date']}",
                     key="delete_session_select"
                 )
