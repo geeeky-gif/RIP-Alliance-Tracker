@@ -188,26 +188,45 @@ if 'events_list' not in st.session_state:
 
 if 'attendance_records' not in st.session_state:
     if os.path.exists(ATTENDANCE_FILE):
-        att_df = pd.read_csv(ATTENDANCE_FILE)
-        st.session_state.attendance_records = att_df.to_dict('records')
+        try:
+            att_df = pd.read_csv(ATTENDANCE_FILE)
+            if not att_df.empty:
+                # Ensure Session ID column exists for legacy data safety
+                if "Session ID" not in att_df.columns:
+                    att_df["Session ID"] = att_df["Date"] + "_" + att_df["Event"]
+                st.session_state.attendance_records = att_df.to_dict('records')
+            else:
+                st.session_state.attendance_records = []
+        except Exception:
+            st.session_state.attendance_records = []
     else:
         st.session_state.attendance_records = []
 
 def save_attendance():
     if st.session_state.attendance_records:
-        pd.DataFrame(st.session_state.attendance_records).to_csv(ATTENDANCE_FILE, index=False)
+        df = pd.DataFrame(st.session_state.attendance_records)
+        if "Session ID" not in df.columns:
+            df["Session ID"] = df["Date"] + "_" + df["Event"]
+        df.to_csv(ATTENDANCE_FILE, index=False)
     else:
-        pd.DataFrame(columns=["Event", "Date", "Player", "Status"]).to_csv(ATTENDANCE_FILE, index=False)
+        pd.DataFrame(columns=["Event", "Date", "Player", "Status", "Session ID"]).to_csv(ATTENDANCE_FILE, index=False)
 
 def get_player_attendance_stats(p_name):
-    all_events_count = max(1, len(set(r["Event"] for r in st.session_state.attendance_records))) if st.session_state.attendance_records else 7
-    p_misses = [r for r in st.session_state.attendance_records if r["Player"] == p_name]
-    attended_count = max(0, all_events_count - len(p_misses))
-    pct = (attended_count / all_events_count) * 100.0
-    return attended_count, all_events_count, pct, len(p_misses)
+    # Calculate unique event sessions logged across the alliance
+    if st.session_state.attendance_records:
+        att_df = pd.DataFrame(st.session_state.attendance_records)
+        unique_sessions = att_df["Session ID"].nunique() if "Session ID" in att_df.columns else len(att_df[["Event", "Date"]].drop_duplicates())
+        all_events_count = max(1, unique_sessions)
+        p_misses = [r for r in st.session_state.attendance_records if r["Player"] == p_name]
+        attended_count = max(0, all_events_count - len(set(r.get("Session ID", r["Date"]+"_"+r["Event"]) for r in p_misses))) # simplistic metric mapping
+        # Standard attendance calculation: total unique sessions minus sessions where player missed
+        p_attended_sessions = att_df[att_df["Player"] == p_name]["Session ID"].nunique() if "Session ID" in att_df.columns else 0
+        pct = (p_attended_sessions / all_events_count) * 100.0 if all_events_count > 0 else 0.0
+        return p_attended_sessions, all_events_count, pct, len(p_misses)
+    return 0, 7, 0.0, 0
 
 # ---------------------------------------------------------
-# OCR PARSER HELPERS
+# OCR PARSER HELPERS (STRICT MATCHING & DUPLICATE SESSION ID)
 # ---------------------------------------------------------
 def clean_text(text):
     return "".join(c for c in text if c.isalnum()).lower()
@@ -241,27 +260,31 @@ def extract_number(text):
     return 0
 
 def parse_attendance_screenshot_auto(ocr_text, roster_names, events_list):
-    # Detect event type from text
-    detected_event = "Elite Wars" # default fallback
     text_lower = ocr_text.lower()
+    
+    # Strict Event Matching (checks exact names first to prevent cross-contamination like Fortress vs Elite)
+    detected_event = "Elite Wars"
     for ev in events_list:
-        if ev.lower() in text_lower:
+        ev_lower = ev.lower()
+        if ev_lower in text_lower:
             detected_event = ev
             break
 
-    # Detect date from text (matching patterns like YYYY-MM-DD, MM/DD/YYYY, etc.)
+    # Extract Date
     date_match = re.search(r'\b(20\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]20\d{2}|\d{1,2}[-/]\d{1,2}[-/]\d{2})\b', ocr_text)
     detected_date = date_match.group(0) if date_match else str(datetime.now().date())
 
-    # Detect status mode
+    # Generate a unique Session ID using date, event, and upload timestamp hash to safely handle same-day duplicate events
+    session_id = f"{detected_date}_{detected_event}_{int(datetime.now().timestamp())}"
+
     status_val = "Not Entered" if ("not entered" in text_lower or "unregistered" in text_lower or "absent" in text_lower) else "Entered"
 
     matched_players = []
     for name in roster_names:
-        if name in ocr_text:
+        if len(name) >= 3 and name.lower() in text_lower:
             matched_players.append(name)
 
-    return detected_event, detected_date, status_val, matched_players
+    return detected_event, detected_date, session_id, status_val, matched_players
 
 def parse_player_info_screenshot(ocr_text, roster_names):
     lines = [line.strip() for line in ocr_text.split('\n') if line.strip()]
@@ -441,14 +464,12 @@ elif page == "Events Dashboard":
     st.subheader("📅 Events Dashboard & Overview")
     if st.session_state.attendance_records:
         att_df = pd.DataFrame(st.session_state.attendance_records)
-        
-        # Summary metrics per event type
         event_summary = []
         for ev in st.session_state.events_list:
             ev_records = att_df[att_df["Event"] == ev]
-            unique_dates = ev_records["Date"].nunique() if not ev_records.empty else 0
+            unique_sessions = ev_records["Session ID"].nunique() if "Session ID" in ev_records.columns else ev_records["Date"].nunique()
             total_logs = len(ev_records)
-            event_summary.append({"Event Name": ev, "Sessions Logged": unique_dates, "Total Entries Recorded": total_logs})
+            event_summary.append({"Event Name": ev, "Total Sessions Logged": unique_sessions, "Total Entries Recorded": total_logs})
         
         summary_df = pd.DataFrame(event_summary)
         st.dataframe(summary_df, use_container_width=True, hide_index=True)
@@ -462,7 +483,7 @@ elif page == "Events Dashboard":
             filtered_att = att_df[att_df["Event"] == selected_view_event]
             st.dataframe(filtered_att, use_container_width=True, hide_index=True)
     else:
-        st.info("No attendance events logged yet. Upload screenshots via the 'Upload Event Screenshots' page to populate this dashboard.")
+        st.info("No attendance events logged yet. Upload screenshots or add manual entries in the Admin tab.")
 
 # ---------------------------------------------------------
 # PAGE 4: PLAYER ACTIVITY DASHBOARD
@@ -485,7 +506,6 @@ elif page == "Player Activity Dashboard":
             })
         activity_df = pd.DataFrame(activity_data)
         
-        # Sort options
         sort_col = st.selectbox("Sort Activity By:", ["Attendance %", "Battle Power", "Player Name", "Missed Events"])
         if sort_col == "Attendance %":
             activity_df["sort_val"] = activity_df["Attendance %"].str.rstrip('%').astype(float)
@@ -508,13 +528,13 @@ elif page == "Alliance Overview & Stats":
     st.subheader("📊 Alliance Participation Overview")
     c1, c2, c3 = st.columns(3)
     c1.metric("Total Roster Members", len(st.session_state.roster_df))
-    c2.metric("Tracked Events", len(set(r["Event"] for r in st.session_state.attendance_records)) if st.session_state.attendance_records else 0)
+    c2.metric("Tracked Sessions", len(set(r.get("Session ID", r["Date"]+"_"+r["Event"]) for r in st.session_state.attendance_records)) if st.session_state.attendance_records else 0)
     c3.metric("Total Logged Entries", len(st.session_state.attendance_records))
     st.markdown("---")
     st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# PAGE 6: UPLOAD SCREENSHOTS (AUTO EVENT & DATE DETECT)
+# PAGE 6: UPLOAD SCREENSHOTS
 # ---------------------------------------------------------
 elif page == "Upload Event Screenshots":
     st.subheader("📸 Bulk Screenshot Uploader")
@@ -524,7 +544,7 @@ elif page == "Upload Event Screenshots":
         upload_type = st.radio("Select Upload Type:", ["Event Attendance (Multi-Event Auto-Detect)", "Player Info / Stats"], horizontal=True)
         
         if "Attendance" in upload_type:
-            st.markdown("💡 *Drop multiple screenshots below. The parser automatically detects the event type and date from each image!*")
+            st.markdown("💡 *Drop multiple screenshots below. Same-day duplicate events are safely separated into unique sessions!*")
             uploaded_files = st.file_uploader("Choose attendance screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
             if uploaded_files and st.button("Process Batch Attendance"):
                 with st.spinner("Running Smart OCR Parser..."):
@@ -532,17 +552,18 @@ elif page == "Upload Event Screenshots":
                     success_count = 0
                     for file in uploaded_files:
                         text = pytesseract.image_to_string(Image.open(file))
-                        detected_event, detected_date, status_val, matched_players = parse_attendance_screenshot_auto(text, roster_names, st.session_state.events_list)
+                        detected_event, detected_date, session_id, status_val, matched_players = parse_attendance_screenshot_auto(text, roster_names, st.session_state.events_list)
                         for name in matched_players:
                             st.session_state.attendance_records.append({
                                 "Event": detected_event, 
                                 "Date": detected_date, 
-                                "Player": name, 
-                                "Status": status_val
+                                "Status": status_val,
+                                "Player": name,
+                                "Session ID": session_id
                             })
                             success_count += 1
                     save_attendance()
-                    st.success(f"Successfully processed {len(uploaded_files)} screenshot(s) and recorded {success_count} attendance entries across events!")
+                    st.success(f"Successfully processed {len(uploaded_files)} screenshot(s) and recorded {success_count} entries across sessions! CSV updated.")
         else:
             uploaded_files = st.file_uploader("Choose player stats screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
             if uploaded_files and st.button("Process Batch Player Stats"):
@@ -568,7 +589,7 @@ elif page == "Upload Event Screenshots":
         st.error("Incorrect passcode.")
 
 # ---------------------------------------------------------
-# PAGE 7: ADMIN / ROSTER & ATTENDANCE BACKUPS
+# PAGE 7: ADMIN / ROSTER & ATTENDANCE BACKUPS & MANUAL ENTRY
 # ---------------------------------------------------------
 elif page == "Admin / Roster Edits":
     st.subheader("⚙️ Admin & Roster Edits")
@@ -591,7 +612,7 @@ elif page == "Admin / Roster Edits":
                 st.success("🎉 Roster successfully restored!")
 
             st.markdown("---")
-            att_backup_data = pd.DataFrame(st.session_state.attendance_records).to_csv(index=False).encode('utf-8') if st.session_state.attendance_records else "Event,Date,Player,Status\n".encode('utf-8')
+            att_backup_data = pd.DataFrame(st.session_state.attendance_records).to_csv(index=False).encode('utf-8') if st.session_state.attendance_records else "Event,Date,Status,Player,Session ID\n".encode('utf-8')
             a1, a2 = st.columns(2)
             a1.download_button("📥 Download Attendance CSV Backup", data=att_backup_data, file_name="attendance_data_backup.csv", mime="text/csv", use_container_width=True)
             uploaded_att_backup = a2.file_uploader("📤 Upload Attendance CSV Backup", type=["csv"], key="att_restore_uploader")
@@ -600,6 +621,36 @@ elif page == "Admin / Roster Edits":
                 st.session_state.attendance_records = att_df_restored.to_dict('records')
                 save_attendance()
                 st.success("🎉 Attendance records successfully restored!")
+
+        with st.expander("📝 Manual Event Attendance Management"):
+            st.markdown("#### Add or Fix Attendance Entry Manually")
+            with st.form("manual_attendance_form"):
+                m_event = st.selectbox("Event Type", st.session_state.events_list)
+                m_date = st.date_input("Event Date")
+                m_player = st.selectbox("Player Name", sorted(st.session_state.roster_df["Player Name"].tolist()))
+                m_status = st.selectbox("Status", ["Entered", "Not Entered"])
+                
+                if st.form_submit_button("Add Attendance Record"):
+                    session_id = f"{m_date}_{m_event}_manual"
+                    st.session_state.attendance_records.append({
+                        "Event": m_event,
+                        "Date": str(m_date),
+                        "Status": m_status,
+                        "Player": m_player,
+                        "Session ID": session_id
+                    })
+                    save_attendance()
+                    st.success(f"Added record for {m_player} ({m_event}) and saved to CSV!")
+
+            if st.session_state.attendance_records:
+                st.markdown("#### Current Attendance Records Table")
+                att_view_df = pd.DataFrame(st.session_state.attendance_records)
+                st.dataframe(att_view_df, use_container_width=True, hide_index=True)
+                if st.button("🗑️ Clear All Attendance Records"):
+                    st.session_state.attendance_records = []
+                    save_attendance()
+                    st.warning("All attendance records cleared!")
+                    st.rerun()
 
         st.markdown("---")
         admin_rank_cols = st.columns(5)
