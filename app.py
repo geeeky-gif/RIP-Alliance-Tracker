@@ -779,4 +779,30 @@ elif page == "Admin & Operations Hub":
                     
                     with st.form("swap_session_form"):
                         selected_session_to_swap = st.selectbox(
-                            "
+                            "Select Recorded Session to Edit", 
+                            options=session_options,
+                            format_func=lambda x: f"{x['Event']} on {x['Date']} (ID: {x['Session ID']})"
+                        )
+                        new_event_target = st.selectbox("Correct Event Type To:", st.session_state.events_list)
+                        new_date_target = st.text_input("Correct Event Date (YYYY-MM-DD):", value=selected_session_to_swap["Date"] if selected_session_to_swap else "")
+                        
+                        swap_submitted = st.form_submit_button("🔄 Update Session Details")
+                        if swap_submitted and selected_session_to_swap:
+                            old_id = selected_session_to_swap["Session ID"]
+                            new_id = f"{new_date_target.strip()}_{new_event_target}_{int(datetime.now().timestamp())}"
+                            
+                            for record in st.session_state.attendance_records:
+                                if isinstance(record, dict) and record.get("Session ID") == old_id:
+                                    record["Event"] = new_event_target
+                                    record["Date"] = new_date_target.strip()
+                                    record["Session ID"] = new_id
+                            
+                            save_attendance()
+                            st.success(f"Successfully updated session to **{new_event_target}** on **{new_date_target}**!")
+                            st.rerun()
+
+                st.markdown("---")
+                st.markdown("#### 🗑️ Target & Delete Specific Sessions")
+                selected_session_to_delete = st.selectbox(
+                    "Select Session to Delete (Event & Date)", 
+                    options=session_options if "Session ID" in att_df_inspect.columns else
