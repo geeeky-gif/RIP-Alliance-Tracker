@@ -242,21 +242,29 @@ def get_tracked_sessions_count():
     return len(att_df)
 
 def get_player_attendance_stats(p_name):
-    if st.session_state.attendance_records:
-        att_df = pd.DataFrame(st.session_state.attendance_records)
-        if att_df.empty:
-            return 0, 7, 0.0, 0
-        unique_sessions = att_df["Session ID"].nunique() if "Session ID" in att_df.columns else len(att_df[["Event", "Date"]].drop_duplicates())
-        all_events_count = max(1, unique_sessions)
+    """
+    Calculates attendance correctly based on uploaded 'Not Entered' absence lists.
+    Everyone on the roster is assumed PRESENT ('Entered') by default for every session, 
+    unless explicitly logged as 'Not Entered' in that session.
+    """
+    if not st.session_state.attendance_records:
+        return 0, 0, 0.0, 0
         
-        p_attended_sessions = 0
-        if "Session ID" in att_df.columns and "Player" in att_df.columns:
-            p_attended_sessions = att_df[att_df["Player"] == p_name]["Session ID"].nunique()
-            
-        p_misses = [r for r in st.session_state.attendance_records if isinstance(r, dict) and r.get("Player") == p_name]
-        pct = (p_attended_sessions / all_events_count) * 100.0 if all_events_count > 0 else 0.0
-        return p_attended_sessions, all_events_count, pct, len(p_misses)
-    return 0, 7, 0.0, 0
+    att_df = pd.DataFrame(st.session_state.attendance_records)
+    if att_df.empty or "Session ID" not in att_df.columns:
+        return 0, 0, 0.0, 0
+        
+    unique_sessions = att_df["Session ID"].unique()
+    total_sessions_count = len(unique_sessions)
+    if total_sessions_count == 0:
+        return 0, 0, 0.0, 0
+        
+    absent_sessions = att_df[(att_df["Player"] == p_name) & (att_df["Status"] == "Not Entered")]["Session ID"].nunique()
+    p_attended_sessions = max(0, total_sessions_count - absent_sessions)
+    p_misses = att_df[(att_df["Player"] == p_name) & (att_df["Status"] == "Not Entered")].to_dict('records')
+    
+    pct = (p_attended_sessions / total_sessions_count) * 100.0 if total_sessions_count > 0 else 0.0
+    return p_attended_sessions, total_sessions_count, pct, len(p_misses)
 
 # ---------------------------------------------------------
 # OCR PARSER HELPERS
@@ -293,30 +301,22 @@ def extract_number(text):
     return 0
 
 def extract_screenshot_date(ocr_text):
-    """
-    Extracts MM-DD or MM/DD from screenshot headers (e.g. '10-16') 
-    and automatically appends current year 2026 -> 2026-10-16.
-    """
     lines = [line.strip() for line in ocr_text.split('\n') if line.strip()]
     current_year = "2026"
     
-    # Priority 1: Check header lines for "battle time", "time", or "period"
     for line in lines[:10]:
         line_lower = line.lower()
         if any(keyword in line_lower for keyword in ["time", "battle", "period", "date"]):
-            # Match full YYYY-MM-DD format first
             full_match = re.search(r'\b(20\d{2}[./-]\d{1,2}[./-]\d{1,2})\b', line)
             if full_match:
                 return full_match.group(0).replace('.', '-').replace('/', '-')
             
-            # Match short MM-DD or MM/DD format (e.g. 10-16 or 10/16)
             short_match = re.search(r'\b(\d{1,2}[./-]\d{1,2})\b', line)
             if short_match:
                 parts = re.split(r'[./-]', short_match.group(0))
                 if len(parts) == 2:
                     return f"{current_year}-{parts[0].zfill(2)}-{parts[1].zfill(2)}"
 
-    # Priority 2: General scan across full text for short MM-DD / MM/DD
     general_short = re.search(r'\b(\d{1,2}[./-]\d{1,2})\b', ocr_text)
     if general_short:
         parts = re.split(r'[./-]', general_short.group(0))
@@ -359,15 +359,13 @@ def parse_attendance_screenshot_auto(ocr_text, roster_names, events_list):
 
     detected_date = extract_screenshot_date(ocr_text)
 
-    status_val = "Not Entered" if ("not entered" in text_lower or "unregistered" in text_lower or "absent" in text_lower) else "Entered"
-
     matched_players = []
     for name in roster_names:
         cleaned_name = clean_text(name)
         if len(cleaned_name) >= 3 and (cleaned_name in cleaned_ocr or name.lower() in text_lower):
             matched_players.append(name)
 
-    return detected_event, detected_date, status_val, matched_players
+    return detected_event, detected_date, matched_players
 
 def parse_player_info_screenshot(ocr_text, roster_names):
     lines = [line.strip() for line in ocr_text.split('\n') if line.strip()]
@@ -474,7 +472,7 @@ if page == "Player Profiles":
     
     player_row = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == selected_player].iloc[0]
     attended_count, all_events_count, attendance_pct, _ = get_player_attendance_stats(selected_player)
-    player_misses = [r for r in st.session_state.attendance_records if isinstance(r, dict) and r.get("Player") == selected_player]
+    player_misses = [r for r in st.session_state.attendance_records if isinstance(r, dict) and r.get("Player"] == selected_player and r.get("Status") == "Not Entered"]
     
     r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
     r1_c1.metric("Rank", player_row["Alliance Rank"])
@@ -551,13 +549,13 @@ elif page == "Events Dashboard":
             ev_records = att_df[att_df["Event"] == ev]
             unique_sessions = ev_records["Session ID"].nunique() if "Session ID" in ev_records.columns else ev_records["Date"].nunique()
             total_logs = len(ev_records)
-            event_summary.append({"Event Name": ev, "Total Sessions Logged": unique_sessions, "Total Entries Recorded": total_logs})
+            event_summary.append({"Event Name": ev, "Total Sessions Logged": unique_sessions, "Total Recorded Exceptions": total_logs})
         
         summary_df = pd.DataFrame(event_summary)
         st.dataframe(summary_df, use_container_width=True, hide_index=True)
         
         st.markdown("---")
-        st.subheader("🔍 Logged Event Records Browser")
+        st.subheader("🔍 Logged Event Exception Records Browser")
         selected_view_event = st.selectbox("Filter by Event Type:", ["All Events"] + st.session_state.events_list)
         if selected_view_event == "All Events":
             st.dataframe(att_df, use_container_width=True, hide_index=True)
@@ -611,7 +609,7 @@ elif page == "Alliance Overview & Stats":
     c1, c2, c3 = st.columns(3)
     c1.metric("Total Roster Members", len(st.session_state.roster_df))
     c2.metric("Tracked Sessions", get_tracked_sessions_count())
-    c3.metric("Total Logged Entries", len(st.session_state.attendance_records) if st.session_state.attendance_records else 0)
+    c3.metric("Total Logged Exceptions", len(st.session_state.attendance_records) if st.session_state.attendance_records else 0)
     st.markdown("---")
     st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
 
@@ -631,15 +629,20 @@ elif page == "Admin & Operations Hub":
         file_uploader_key = f"screenshot_uploader_{st.session_state.uploader_key_counter}"
         
         if "Attendance" in upload_type:
-            st.markdown("💡 *Drop multiple screenshots below. Each batch upload gets a unique session tag, allowing multiple events on the same day.*")
+            st.markdown("💡 *Drop multiple event screenshots below and choose whether the scan represents players who **Did Not Enter** or **Entered**.*")
             
-            # --- UPLOAD TIME EVENT OVERRIDE & SESSION IDENTIFIER ---
-            col_ov1, col_ov2 = st.columns(2)
-            event_override_choice = col_ov1.selectbox(
-                "📌 Upload Event Override (Optional):", 
+            # --- UPLOAD CONFIGURATION TOGGLES ---
+            col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
+            scan_mode_choice = col_cfg1.selectbox(
+                "📋 Scan List Type:", 
+                ["Not Entered (Absences)", "Entered (Attendees)"],
+                index=0
+            )
+            event_override_choice = col_cfg2.selectbox(
+                "📌 Event Override (Optional):", 
                 ["Auto-Detect from Screenshot"] + st.session_state.events_list
             )
-            session_suffix_tag = col_ov2.text_input("🏷️ Session Suffix / Batch ID (Optional - separates same-day events):", value="", placeholder="e.g. War 1, Round 2")
+            session_suffix_tag = col_cfg3.text_input("🏷️ Session Suffix (Optional):", value="", placeholder="e.g. War 1")
             
             uploaded_files = st.file_uploader("Choose attendance screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=file_uploader_key)
             
@@ -655,17 +658,17 @@ elif page == "Admin & Operations Hub":
                 with st.spinner("Running Smart OCR Parser..."):
                     roster_names = st.session_state.roster_df["Player Name"].tolist()
                     success_count = 0
-                    
                     batch_stamp = int(datetime.now().timestamp())
+                    
+                    target_status_val = "Not Entered" if "Not Entered" in scan_mode_choice else "Entered"
                     
                     for file in uploaded_files:
                         text = pytesseract.image_to_string(Image.open(file))
-                        detected_event, detected_date, status_val, matched_players = parse_attendance_screenshot_auto(text, roster_names, st.session_state.events_list)
+                        detected_event, detected_date, matched_players = parse_attendance_screenshot_auto(text, roster_names, st.session_state.events_list)
                         
                         if event_override_choice != "Auto-Detect from Screenshot":
                             detected_event = event_override_choice
                         
-                        # Unique session ID allowing multiple rounds/events on the same date
                         if session_suffix_tag.strip():
                             session_id = f"{detected_date}_{detected_event}_{session_suffix_tag.strip()}"
                         else:
@@ -680,13 +683,13 @@ elif page == "Admin & Operations Hub":
                                 st.session_state.attendance_records.append({
                                     "Event": detected_event, 
                                     "Date": detected_date, 
-                                    "Status": status_val,
+                                    "Status": target_status_val,
                                     "Player": name,
                                     "Session ID": session_id
                                 })
                                 success_count += 1
                     save_attendance()
-                    st.success(f"Successfully processed {len(uploaded_files)} screenshot(s) and recorded {success_count} new entries! CSV updated.")
+                    st.success(f"Successfully processed {len(uploaded_files)} screenshot(s) as **{scan_mode_choice}** and logged {success_count} entry/entries! CSV updated.")
         else:
             uploaded_files = st.file_uploader("Choose player stats screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=file_uploader_key)
             
@@ -745,16 +748,16 @@ elif page == "Admin & Operations Hub":
                 save_attendance()
                 st.success("🎉 Attendance records successfully restored!")
 
-        # --- SECTION 3: MANUAL ATTENDANCE, RE-SWAP & EDIT SESSIONS ---
+        # --- SECTION 3: MANUAL ATTENDANCE / ABSENCE MANAGEMENT ---
         with st.expander("📝 Manual Event Attendance Management & Session Editing"):
-            st.markdown("#### Add Attendance Entry Manually")
+            st.markdown("#### Add Manual Attendance / Absence Entry")
             with st.form("manual_attendance_form"):
                 m_event = st.selectbox("Event Type", st.session_state.events_list)
                 m_date = st.text_input("Event Date (YYYY-MM-DD)", value="2026-10-16")
                 m_player = st.selectbox("Player Name", sorted(st.session_state.roster_df["Player Name"].tolist()))
-                m_status = st.selectbox("Status", ["Entered", "Not Entered"])
+                m_status = st.selectbox("Status", ["Not Entered", "Entered"])
                 
-                if st.form_submit_button("Add Attendance Record"):
+                if st.form_submit_button("Add Record"):
                     session_id = f"{m_date}_{m_event}_manual"
                     st.session_state.attendance_records.append({
                         "Event": m_event,
@@ -764,11 +767,10 @@ elif page == "Admin & Operations Hub":
                         "Session ID": session_id
                     })
                     save_attendance()
-                    st.success(f"Added record for {m_player} ({m_event}) and saved to CSV!")
+                    st.success(f"Added record for {m_player} ({m_event} - {m_status}) and saved to CSV!")
 
             st.markdown("---")
             st.markdown("#### 🔄 Fix / Edit Existing Session Details (Event & Date)")
-            st.markdown("💡 *If an event was logged with an incorrect date or event type, fix it here without re-uploading.*")
             
             if st.session_state.attendance_records:
                 att_df_inspect = pd.DataFrame(st.session_state.attendance_records)
