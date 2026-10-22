@@ -195,7 +195,7 @@ if 'attendance_records' not in st.session_state:
 def save_attendance():
     if st.session_state.attendance_records:
         pd.DataFrame(st.session_state.attendance_records).to_csv(ATTENDANCE_FILE, index=False)
-    elif os.path.exists(ATTENDANCE_FILE):
+    else:
         pd.DataFrame(columns=["Event", "Date", "Player", "Status"]).to_csv(ATTENDANCE_FILE, index=False)
 
 def get_player_attendance_stats(p_name):
@@ -468,17 +468,19 @@ elif page == "Upload Event Screenshots":
         st.error("Incorrect passcode.")
 
 # ---------------------------------------------------------
-# PAGE 5: ADMIN / ROSTER EDITS
+# PAGE 5: ADMIN / ROSTER & ATTENDANCE BACKUPS
 # ---------------------------------------------------------
 elif page == "Admin / Roster Edits":
     st.subheader("⚙️ Admin & Roster Edits")
     passcode = st.text_input("Enter Leadership Passcode to Unlock Admin Tools:", type="password", key="admin_pass")
     if passcode == "rip123":
         st.success("Passcode accepted!")
+        
+        # Backup & Restore Expander for Roster & Attendance
         with st.expander("💾 CSV Backup & Instant Restore Tools"):
             c1, c2 = st.columns(2)
             c1.download_button("📥 Download Roster CSV Backup", data=st.session_state.roster_df.to_csv(index=False).encode('utf-8'), file_name="roster_data_backup.csv", mime="text/csv", use_container_width=True)
-            uploaded_backup = c2.file_uploader("📤 Upload CSV Backup to Restore", type=["csv"], key="restore_uploader")
+            uploaded_backup = c2.file_uploader("📤 Upload Roster CSV Backup", type=["csv"], key="restore_uploader")
             if uploaded_backup is not None:
                 st.session_state.roster_df = pd.read_csv(uploaded_backup)
                 st.session_state.roster_df["Military Rank"] = st.session_state.roster_df["Military Rank"].astype(str)
@@ -488,6 +490,17 @@ elif page == "Admin / Roster Edits":
                 st.session_state.roster_df["Castle Level"] = st.session_state.roster_df["Castle Level"].astype(str)
                 save_roster()
                 st.success("🎉 Roster successfully restored!")
+
+            st.markdown("---")
+            att_backup_data = pd.DataFrame(st.session_state.attendance_records).to_csv(index=False).encode('utf-8') if st.session_state.attendance_records else "Event,Date,Player,Status\n".encode('utf-8')
+            a1, a2 = st.columns(2)
+            a1.download_button("📥 Download Attendance CSV Backup", data=att_backup_data, file_name="attendance_data_backup.csv", mime="text/csv", use_container_width=True)
+            uploaded_att_backup = a2.file_uploader("📤 Upload Attendance CSV Backup", type=["csv"], key="att_restore_uploader")
+            if uploaded_att_backup is not None:
+                att_df_restored = pd.read_csv(uploaded_att_backup)
+                st.session_state.attendance_records = att_df_restored.to_dict('records')
+                save_attendance()
+                st.success("🎉 Attendance records successfully restored!")
 
         st.markdown("---")
         admin_rank_cols = st.columns(5)
