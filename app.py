@@ -199,7 +199,6 @@ if 'attendance_records' not in st.session_state:
         try:
             att_df = pd.read_csv(ATTENDANCE_FILE)
             if not att_df.empty:
-                # Standardize Session ID to strictly be Date + Event for seamless merging across batches/days
                 att_df["Session ID"] = att_df["Date"].astype(str) + "_" + att_df["Event"].astype(str)
                 st.session_state.attendance_records = att_df.to_dict('records')
             else:
@@ -247,7 +246,7 @@ def get_player_attendance_stats(p_name):
     return 0, 7, 0.0, 0
 
 # ---------------------------------------------------------
-# OCR PARSER HELPERS (STRICT EVENT MATCHING)
+# OCR PARSER HELPERS (ROBUST EVENT DETECTION)
 # ---------------------------------------------------------
 def clean_text(text):
     return "".join(c for c in text if c.isalnum()).lower()
@@ -284,14 +283,28 @@ def parse_attendance_screenshot_auto(ocr_text, roster_names, events_list):
     text_lower = ocr_text.lower()
     cleaned_ocr = clean_text(ocr_text)
     
-    # Sort events by length descending so longer exact names ("Fortress War", "Realm Invasion") are checked first
-    sorted_events = sorted(events_list, key=len, reverse=True)
     detected_event = "Elite Wars"
-    for ev in sorted_events:
-        ev_lower = ev.lower()
-        if ev_lower in text_lower or clean_text(ev) in cleaned_ocr:
-            detected_event = ev
-            break
+    
+    # Robust multi-keyword check handling line wraps or minor OCR distortion
+    if "fortress" in text_lower or "fortress" in cleaned_ocr:
+        detected_event = "Fortress War"
+    elif "realm" in text_lower or "invasion" in text_lower or "realm" in cleaned_ocr or "invasion" in cleaned_ocr:
+        detected_event = "Realm Invasion"
+    elif "void" in text_lower or "void" in cleaned_ocr:
+        detected_event = "Void War"
+    elif "territory" in text_lower or "defense" in text_lower or "territory" in cleaned_ocr:
+        detected_event = "Territory Defense"
+    elif "elite" in text_lower and "adventure" in text_lower:
+        detected_event = "Elite Adventure"
+    elif "elite" in text_lower or "wars" in text_lower:
+        detected_event = "Elite Wars"
+    else:
+        # Fallback check against official list
+        sorted_events = sorted(events_list, key=len, reverse=True)
+        for ev in sorted_events:
+            if ev.lower() in text_lower or clean_text(ev) in cleaned_ocr:
+                detected_event = ev
+                break
 
     date_match = re.search(r'\b(20\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]20\d{2}|\d{1,2}[-/]\d{1,2}[-/]\d{2})\b', ocr_text)
     detected_date = date_match.group(0) if date_match else str(datetime.now().date())
@@ -588,11 +601,9 @@ elif page == "Admin & Operations Hub":
                         text = pytesseract.image_to_string(Image.open(file))
                         detected_event, detected_date, status_val, matched_players = parse_attendance_screenshot_auto(text, roster_names, st.session_state.events_list)
                         
-                        # Session ID is strictly Date + Event Name so future uploads to the same event automatically merge
                         session_id = f"{detected_date}_{detected_event}"
                         
                         for name in matched_players:
-                            # Avoid exact duplicate entries if uploading the same player twice for the same event session
                             existing_match = [
                                 r for r in st.session_state.attendance_records 
                                 if isinstance(r, dict) and r.get("Session ID") == session_id and r.get("Player") == name
@@ -709,7 +720,7 @@ elif page == "Admin & Operations Hub":
                         st.success(f"Successfully deleted session: {selected_session_to_delete['Event']} on {selected_session_to_delete['Date']}")
                         st.rerun()
                 
-                графік_view = st.markdown("#### Current Attendance Records Table")
+                st.markdown("#### Current Attendance Records Table")
                 st.dataframe(att_df_inspect, use_container_width=True, hide_index=True)
                 
                 if st.button("🚨 WIPE ALL Attendance Records"):
