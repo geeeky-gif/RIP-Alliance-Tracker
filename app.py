@@ -246,7 +246,7 @@ def get_player_attendance_stats(p_name):
     return 0, 7, 0.0, 0
 
 # ---------------------------------------------------------
-# OCR PARSER HELPERS (ROBUST EVENT DETECTION)
+# OCR PARSER HELPERS
 # ---------------------------------------------------------
 def clean_text(text):
     return "".join(c for c in text if c.isalnum()).lower()
@@ -284,8 +284,6 @@ def parse_attendance_screenshot_auto(ocr_text, roster_names, events_list):
     cleaned_ocr = clean_text(ocr_text)
     
     detected_event = "Elite Wars"
-    
-    # Robust multi-keyword check handling line wraps or minor OCR distortion
     if "fortress" in text_lower or "fortress" in cleaned_ocr:
         detected_event = "Fortress War"
     elif "realm" in text_lower or "invasion" in text_lower or "realm" in cleaned_ocr or "invasion" in cleaned_ocr:
@@ -299,14 +297,13 @@ def parse_attendance_screenshot_auto(ocr_text, roster_names, events_list):
     elif "elite" in text_lower or "wars" in text_lower:
         detected_event = "Elite Wars"
     else:
-        # Fallback check against official list
         sorted_events = sorted(events_list, key=len, reverse=True)
         for ev in sorted_events:
             if ev.lower() in text_lower or clean_text(ev) in cleaned_ocr:
                 detected_event = ev
                 break
 
-    date_match = re.search(r'\b(20\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]20\d{2}|\d{1,2}[-/]\d{1,2}[-/]\d{2})\b', ocr_text)
+    date_match = re.search(r'\b(20\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]20\d{2}|\d{1,2}[-/]\d{1,2}[-/]22\d{2}|[A-Za-z]+\s+\d{1,2},\s*20\d{2})\b', ocr_text)
     detected_date = date_match.group(0) if date_match else str(datetime.now().date())
 
     status_val = "Not Entered" if ("not entered" in text_lower or "unregistered" in text_lower or "absent" in text_lower) else "Entered"
@@ -581,7 +578,14 @@ elif page == "Admin & Operations Hub":
         file_uploader_key = f"screenshot_uploader_{st.session_state.uploader_key_counter}"
         
         if "Attendance" in upload_type:
-            st.markdown("💡 *Drop multiple screenshots below. If you upload a screenshot for a past event date, it will automatically merge into that existing session.*")
+            st.markdown("💡 *Drop multiple screenshots below. Use the Event Override dropdown if you want to force a specific event type.*")
+            
+            # --- UPLOAD EVENT OVERRIDE ---
+            event_override_choice = st.selectbox(
+                "📌 Upload Event Override (Optional - bypasses OCR event detection):", 
+                ["Auto-Detect from Screenshot"] + st.session_state.events_list
+            )
+            
             uploaded_files = st.file_uploader("Choose attendance screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=file_uploader_key)
             
             col_up1, col_up2 = st.columns(2)
@@ -601,6 +605,9 @@ elif page == "Admin & Operations Hub":
                         text = pytesseract.image_to_string(Image.open(file))
                         detected_event, detected_date, status_val, matched_players = parse_attendance_screenshot_auto(text, roster_names, st.session_state.events_list)
                         
+                        if event_override_choice != "Auto-Detect from Screenshot":
+                            detected_event = event_override_choice
+                        
                         session_id = f"{detected_date}_{detected_event}"
                         
                         for name in matched_players:
@@ -618,7 +625,7 @@ elif page == "Admin & Operations Hub":
                                 })
                                 success_count += 1
                     save_attendance()
-                    st.success(f"Successfully processed {len(uploaded_files)} screenshot(s) and recorded {success_count} new entries! CSV updated.")
+                    st.success(f"Successfully processed {len(uploaded_files)} screenshot(s) under **{event_override_choice if event_override_choice != 'Auto-Detect from Screenshot' else 'Auto-Detected'}** and recorded {success_count} new entries! CSV updated.")
         else:
             uploaded_files = st.file_uploader("Choose player stats screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=file_uploader_key)
             
@@ -677,8 +684,8 @@ elif page == "Admin & Operations Hub":
                 save_attendance()
                 st.success("🎉 Attendance records successfully restored!")
 
-        # --- SECTION 3: MANUAL ATTENDANCE & GRANULAR SESSION DELETION ---
-        with st.expander("📝 Manual Event Attendance Management & Session Deletion"):
+        # --- SECTION 3: MANUAL ATTENDANCE, RE-SWAP & SESSION DELETION ---
+        with st.expander("📝 Manual Event Attendance Management & Session Swapping"):
             st.markdown("#### Add Attendance Entry Manually")
             with st.form("manual_attendance_form"):
                 m_event = st.selectbox("Event Type", st.session_state.events_list)
@@ -699,26 +706,56 @@ elif page == "Admin & Operations Hub":
                     st.success(f"Added record for {m_player} ({m_event}) and saved to CSV!")
 
             st.markdown("---")
-            st.markdown("#### 🗑️ Target & Delete Specific Sessions")
+            st.markdown("#### 🔄 Swap / Correct Existing Session Event Type")
+            st.markdown("💡 *If an event was logged incorrectly (e.g., logged as Elite Wars instead of Fortress War), select it below and change its event type.*")
+            
             if st.session_state.attendance_records:
                 att_df_inspect = pd.DataFrame(st.session_state.attendance_records)
                 if "Session ID" in att_df_inspect.columns:
                     session_options = att_df_inspect[["Session ID", "Event", "Date"]].drop_duplicates().to_dict('records')
-                    selected_session_to_delete = st.selectbox(
-                        "Select Session to Delete (Event & Date)", 
-                        options=session_options,
-                        format_func=lambda x: f"{x['Event']} on {x['Date']}"
-                    )
                     
-                    if st.button("🗑️ Delete Selected Session"):
-                        target_id = selected_session_to_delete["Session ID"]
-                        st.session_state.attendance_records = [
-                            r for r in st.session_state.attendance_records 
-                            if isinstance(r, dict) and r.get("Session ID") != target_id
-                        ]
-                        save_attendance()
-                        st.success(f"Successfully deleted session: {selected_session_to_delete['Event']} on {selected_session_to_delete['Date']}")
-                        st.rerun()
+                    with st.form("swap_session_form"):
+                        selected_session_to_swap = st.selectbox(
+                            "Select Recorded Session to Fix/Swap", 
+                            options=session_options,
+                            format_func=lambda x: f"{x['Event']} on {x['Date']}"
+                        )
+                        new_event_target = st.selectbox("Change Event Type To:", st.events_list if 'events_list' in st.session_state else ["Elite Wars", "Fortress War", "Realm Invasion", "Void War", "Territory Defense", "Elite Adventure"])
+                        
+                        swap_submitted = st.form_submit_button("🔄 Swap Event Type")
+                        if swap_submitted and selected_session_to_swap:
+                            old_id = selected_session_to_swap["Session ID"]
+                            target_date = selected_session_to_swap["Date"]
+                            new_id = f"{target_date}_{new_event_target}"
+                            
+                            # Update all records matching this session ID
+                            for record in st.session_state.attendance_records:
+                                if isinstance(record, dict) and record.get("Session ID") == old_id:
+                                    record["Event"] = new_event_target
+                                    record["Session ID"] = new_id
+                            
+                            save_attendance()
+                            st.success(f"Successfully swapped session from **{selected_session_to_swap['Event']}** to **{new_event_target}**! All associated entries updated.")
+                            st.rerun()
+
+                st.markdown("---")
+                st.markdown("#### 🗑️ Target & Delete Specific Sessions")
+                selected_session_to_delete = st.selectbox(
+                    "Select Session to Delete (Event & Date)", 
+                    options=session_options,
+                    format_func=lambda x: f"{x['Event']} on {x['Date']}",
+                    key="delete_session_select"
+                )
+                
+                if st.button("🗑️ Delete Selected Session"):
+                    target_id = selected_session_to_delete["Session ID"]
+                    st.session_state.attendance_records = [
+                        r for r in st.session_state.attendance_records 
+                        if isinstance(r, dict) and r.get("Session ID") != target_id
+                    ]
+                    save_attendance()
+                    st.success(f"Successfully deleted session: {selected_session_to_delete['Event']} on {selected_session_to_delete['Date']}")
+                    st.rerun()
                 
                 st.markdown("#### Current Attendance Records Table")
                 st.dataframe(att_df_inspect, use_container_width=True, hide_index=True)
