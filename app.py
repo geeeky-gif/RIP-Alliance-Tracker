@@ -5,6 +5,7 @@ import pytesseract
 from difflib import SequenceMatcher
 import os
 import re
+from datetime import datetime
 
 st.set_page_config(page_title="RIP Alliance Attendance Tracker", layout="wide")
 
@@ -239,6 +240,29 @@ def extract_number(text):
         return int(nums[0].replace(',', ''))
     return 0
 
+def parse_attendance_screenshot_auto(ocr_text, roster_names, events_list):
+    # Detect event type from text
+    detected_event = "Elite Wars" # default fallback
+    text_lower = ocr_text.lower()
+    for ev in events_list:
+        if ev.lower() in text_lower:
+            detected_event = ev
+            break
+
+    # Detect date from text (matching patterns like YYYY-MM-DD, MM/DD/YYYY, etc.)
+    date_match = re.search(r'\b(20\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]20\d{2}|\d{1,2}[-/]\d{1,2}[-/]\d{2})\b', ocr_text)
+    detected_date = date_match.group(0) if date_match else str(datetime.now().date())
+
+    # Detect status mode
+    status_val = "Not Entered" if ("not entered" in text_lower or "unregistered" in text_lower or "absent" in text_lower) else "Entered"
+
+    matched_players = []
+    for name in roster_names:
+        if name in ocr_text:
+            matched_players.append(name)
+
+    return detected_event, detected_date, status_val, matched_players
+
 def parse_player_info_screenshot(ocr_text, roster_names):
     lines = [line.strip() for line in ocr_text.split('\n') if line.strip()]
     parsed_data = {
@@ -297,6 +321,8 @@ st.sidebar.markdown("### 📌 Command Menu")
 page = st.sidebar.radio("Go to:", [
     "Player Profiles", 
     "Attendance Thresholds",
+    "Events Dashboard",
+    "Player Activity Dashboard",
     "Alliance Overview & Stats", 
     "Upload Event Screenshots", 
     "Admin / Roster Edits"
@@ -409,7 +435,74 @@ elif page == "Attendance Thresholds":
         st.success(f"🎉 Zero accounts fall below {threshold}% attendance.")
 
 # ---------------------------------------------------------
-# PAGE 3: ALLIANCE OVERVIEW & STATS
+# PAGE 3: EVENTS DASHBOARD
+# ---------------------------------------------------------
+elif page == "Events Dashboard":
+    st.subheader("📅 Events Dashboard & Overview")
+    if st.session_state.attendance_records:
+        att_df = pd.DataFrame(st.session_state.attendance_records)
+        
+        # Summary metrics per event type
+        event_summary = []
+        for ev in st.session_state.events_list:
+            ev_records = att_df[att_df["Event"] == ev]
+            unique_dates = ev_records["Date"].nunique() if not ev_records.empty else 0
+            total_logs = len(ev_records)
+            event_summary.append({"Event Name": ev, "Sessions Logged": unique_dates, "Total Entries Recorded": total_logs})
+        
+        summary_df = pd.DataFrame(event_summary)
+        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+        
+        st.markdown("---")
+        st.subheader("🔍 Logged Event Records Browser")
+        selected_view_event = st.selectbox("Filter by Event Type:", ["All Events"] + st.session_state.events_list)
+        if selected_view_event == "All Events":
+            st.dataframe(att_df, use_container_width=True, hide_index=True)
+        else:
+            filtered_att = att_df[att_df["Event"] == selected_view_event]
+            st.dataframe(filtered_att, use_container_width=True, hide_index=True)
+    else:
+        st.info("No attendance events logged yet. Upload screenshots via the 'Upload Event Screenshots' page to populate this dashboard.")
+
+# ---------------------------------------------------------
+# PAGE 4: PLAYER ACTIVITY DASHBOARD
+# ---------------------------------------------------------
+elif page == "Player Activity Dashboard":
+    st.subheader("📊 Player Activity & Participation Dashboard")
+    if not st.session_state.roster_df.empty:
+        activity_data = []
+        for _, row in st.session_state.roster_df.iterrows():
+            p_name = row["Player Name"]
+            att_cnt, total_cnt, pct, miss_cnt = get_player_attendance_stats(p_name)
+            activity_data.append({
+                "Player Name": p_name,
+                "Alliance Rank": row["Alliance Rank"],
+                "Battle Power": row["Battle Power"],
+                "Events Attended": f"{att_cnt} / {total_cnt}",
+                "Attendance %": f"{pct:.1f}%",
+                "Missed Events": miss_cnt,
+                "Status": row["Status"]
+            })
+        activity_df = pd.DataFrame(activity_data)
+        
+        # Sort options
+        sort_col = st.selectbox("Sort Activity By:", ["Attendance %", "Battle Power", "Player Name", "Missed Events"])
+        if sort_col == "Attendance %":
+            activity_df["sort_val"] = activity_df["Attendance %"].str.rstrip('%').astype(float)
+            activity_df = activity_df.sort_values(by="sort_val", ascending=False).drop(columns=["sort_val"])
+        elif sort_col == "Battle Power":
+            activity_df = activity_df.sort_values(by="Battle Power", ascending=False)
+        elif sort_col == "Missed Events":
+            activity_df = activity_df.sort_values(by="Missed Events", ascending=True)
+        else:
+            activity_df = activity_df.sort_values(by="Player Name", ascending=True)
+
+        st.dataframe(activity_df[["Player Name", "Alliance Rank", "Battle Power", "Events Attended", "Attendance %", "Missed Events", "Status"]], use_container_width=True, hide_index=True)
+    else:
+        st.warning("No roster members found.")
+
+# ---------------------------------------------------------
+# PAGE 5: ALLIANCE OVERVIEW & STATS
 # ---------------------------------------------------------
 elif page == "Alliance Overview & Stats":
     st.subheader("📊 Alliance Participation Overview")
@@ -421,37 +514,43 @@ elif page == "Alliance Overview & Stats":
     st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# PAGE 4: UPLOAD SCREENSHOTS
+# PAGE 6: UPLOAD SCREENSHOTS (AUTO EVENT & DATE DETECT)
 # ---------------------------------------------------------
 elif page == "Upload Event Screenshots":
     st.subheader("📸 Bulk Screenshot Uploader")
     passcode = st.text_input("Enter Leadership Passcode to Unlock Uploader:", type="password")
     if passcode == "rip123":
         st.success("Passcode accepted!")
-        upload_type = st.radio("Select Upload Type:", ["Event Attendance", "Player Info / Stats"], horizontal=True)
+        upload_type = st.radio("Select Upload Type:", ["Event Attendance (Multi-Event Auto-Detect)", "Player Info / Stats"], horizontal=True)
+        
         if "Attendance" in upload_type:
-            c1, c2 = st.columns(2)
-            selected_event = c1.selectbox("Select Event", st.session_state.events_list)
-            event_date = c2.date_input("Battle Date")
-            entry_mode = st.radio("Logging Mode:", ["Log Non-Attendants ('Not Entered')", "Log Attendants ('Battlers')"], horizontal=True)
+            st.markdown("💡 *Drop multiple screenshots below. The parser automatically detects the event type and date from each image!*")
+            uploaded_files = st.file_uploader("Choose attendance screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+            if uploaded_files and st.button("Process Batch Attendance"):
+                with st.spinner("Running Smart OCR Parser..."):
+                    roster_names = st.session_state.roster_df["Player Name"].tolist()
+                    success_count = 0
+                    for file in uploaded_files:
+                        text = pytesseract.image_to_string(Image.open(file))
+                        detected_event, detected_date, status_val, matched_players = parse_attendance_screenshot_auto(text, roster_names, st.session_state.events_list)
+                        for name in matched_players:
+                            st.session_state.attendance_records.append({
+                                "Event": detected_event, 
+                                "Date": detected_date, 
+                                "Player": name, 
+                                "Status": status_val
+                            })
+                            success_count += 1
+                    save_attendance()
+                    st.success(f"Successfully processed {len(uploaded_files)} screenshot(s) and recorded {success_count} attendance entries across events!")
         else:
-            scan_date = st.date_input("Stat Scan Date")
-
-        uploaded_files = st.file_uploader("Choose screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
-        if uploaded_files and st.button("Process Batch Screenshots"):
-            with st.spinner("Running OCR Parser..."):
-                roster_names = st.session_state.roster_df["Player Name"].tolist()
-                success_count = 0
-                for file in uploaded_files:
-                    text = pytesseract.image_to_string(Image.open(file))
-                    if "Attendance" in upload_type:
-                        for name in roster_names:
-                            if name in text:
-                                st.session_state.attendance_records.append({"Event": selected_event, "Date": str(event_date), "Player": name, "Status": "Not Entered" if "Non-Attendants" in entry_mode else "Entered"})
-                                success_count += 1
-                        # Save attendance immediately after processing batch
-                        save_attendance()
-                    else:
+            uploaded_files = st.file_uploader("Choose player stats screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+            if uploaded_files and st.button("Process Batch Player Stats"):
+                with st.spinner("Running OCR Parser..."):
+                    roster_names = st.session_state.roster_df["Player Name"].tolist()
+                    success_count = 0
+                    for file in uploaded_files:
+                        text = pytesseract.image_to_string(Image.open(file))
                         p_data = parse_player_info_screenshot(text, roster_names)
                         p_name = p_data["Player Name"]
                         if p_name:
@@ -464,12 +563,12 @@ elif page == "Upload Event Screenshots":
                                     st.session_state.roster_df.at[idx, field] = str(p_data[field])
                             save_roster()
                             success_count += 1
-                st.success(f"Successfully updated {success_count} record(s).")
+                    st.success(f"Successfully updated {success_count} player record(s).")
     elif passcode != "":
         st.error("Incorrect passcode.")
 
 # ---------------------------------------------------------
-# PAGE 5: ADMIN / ROSTER & ATTENDANCE BACKUPS
+# PAGE 7: ADMIN / ROSTER & ATTENDANCE BACKUPS
 # ---------------------------------------------------------
 elif page == "Admin / Roster Edits":
     st.subheader("⚙️ Admin & Roster Edits")
