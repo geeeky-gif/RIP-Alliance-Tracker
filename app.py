@@ -449,6 +449,7 @@ elif page == "Upload Event Screenshots":
                             if name in text:
                                 st.session_state.attendance_records.append({"Event": selected_event, "Date": str(event_date), "Player": name, "Status": "Not Entered" if "Non-Attendants" in entry_mode else "Entered"})
                                 success_count += 1
+                        # Save attendance immediately after processing batch
                         save_attendance()
                     else:
                         p_data = parse_player_info_screenshot(text, roster_names)
@@ -476,7 +477,6 @@ elif page == "Admin / Roster Edits":
     if passcode == "rip123":
         st.success("Passcode accepted!")
         
-        # Backup & Restore Expander for Roster & Attendance
         with st.expander("💾 CSV Backup & Instant Restore Tools"):
             c1, c2 = st.columns(2)
             c1.download_button("📥 Download Roster CSV Backup", data=st.session_state.roster_df.to_csv(index=False).encode('utf-8'), file_name="roster_data_backup.csv", mime="text/csv", use_container_width=True)
