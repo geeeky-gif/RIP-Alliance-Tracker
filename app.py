@@ -87,7 +87,7 @@ st.markdown(
 # ---------------------------------------------------------
 CASTLE_LEVEL_OPTIONS = [str(i) for i in range(1, 41)] + ["S1", "S2", "S3"]
 LORD_LEVEL_OPTIONS = list(range(0, 81))
-POWER_RANK_OPTIONS = list(range(0, 101))
+POWER_RANK_OPTIONS = list(range(0, 501))
 MILITARY_RANK_OPTIONS = [
     "",
     "Sargeant",
@@ -115,6 +115,7 @@ MILITARY_RANK_OPTIONS = [
 ROSTER_FILE = "roster_data.csv"
 LOCKS_FILE = "field_locks.csv"
 HISTORY_FILE = "bp_history.csv"
+ATTENDANCE_FILE = "attendance_data.csv"
 
 if 'roster_df' not in st.session_state:
     if os.path.exists(ROSTER_FILE):
@@ -185,7 +186,17 @@ if 'events_list' not in st.session_state:
     st.session_state.events_list = ["Elite Wars", "Fortress War", "Realm Invasion", "Void War", "Territory Defense", "Elite Adventure"]
 
 if 'attendance_records' not in st.session_state:
-    st.session_state.attendance_records = []
+    if os.path.exists(ATTENDANCE_FILE):
+        att_df = pd.read_csv(ATTENDANCE_FILE)
+        st.session_state.attendance_records = att_df.to_dict('records')
+    else:
+        st.session_state.attendance_records = []
+
+def save_attendance():
+    if st.session_state.attendance_records:
+        pd.DataFrame(st.session_state.attendance_records).to_csv(ATTENDANCE_FILE, index=False)
+    elif os.path.exists(ATTENDANCE_FILE):
+        pd.DataFrame(columns=["Event", "Date", "Player", "Status"]).to_csv(ATTENDANCE_FILE, index=False)
 
 def get_player_attendance_stats(p_name):
     all_events_count = max(1, len(set(r["Event"] for r in st.session_state.attendance_records))) if st.session_state.attendance_records else 7
@@ -267,7 +278,7 @@ def parse_player_info_screenshot(ocr_text, roster_names):
             parsed_data["Individual Reputation"] = val if val > 0 else (extract_number(lines[i+1]) if i + 1 < len(lines) else 0)
         if "power ranking" in line_lower or "power rank" in line_lower:
             val = extract_number(line)
-            if 0 <= val <= 100:
+            if 0 <= val <= 500:
                 parsed_data["Power Ranking"] = val
         if "battle power" in line_lower or (line_lower == "power" and "ranking" not in line_lower):
             val = extract_number(line)
@@ -438,6 +449,7 @@ elif page == "Upload Event Screenshots":
                             if name in text:
                                 st.session_state.attendance_records.append({"Event": selected_event, "Date": str(event_date), "Player": name, "Status": "Not Entered" if "Non-Attendants" in entry_mode else "Entered"})
                                 success_count += 1
+                        save_attendance()
                     else:
                         p_data = parse_player_info_screenshot(text, roster_names)
                         p_name = p_data["Player Name"]
@@ -456,7 +468,7 @@ elif page == "Upload Event Screenshots":
         st.error("Incorrect passcode.")
 
 # ---------------------------------------------------------
-# PAGE 5: ADMIN / ROSTER EDITS (WITH MERIT RANK DROPDOWNS)
+# PAGE 5: ADMIN / ROSTER EDITS
 # ---------------------------------------------------------
 elif page == "Admin / Roster Edits":
     st.subheader("⚙️ Admin & Roster Edits")
@@ -525,7 +537,7 @@ elif page == "Admin / Roster Edits":
                 new_lord = c1.selectbox("Lord Level", LORD_LEVEL_OPTIONS, index=lord_idx)
                 lock_lord = c2.checkbox("🔒 Lock", value=is_locked(target_player, "Lord Level"), key=f"l_lord_{target_player}")
 
-                # Power Ranking Dropdown (0-100)
+                # Power Ranking Dropdown (0-500)
                 c1, c2 = st.columns([3, 1])
                 curr_prank = int(current_row["Power Ranking"]) if pd.notna(current_row["Power Ranking"]) else 0
                 prank_idx = POWER_RANK_OPTIONS.index(curr_prank) if curr_prank in POWER_RANK_OPTIONS else 0
