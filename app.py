@@ -805,4 +805,38 @@ elif page == "Admin & Operations Hub":
                 st.markdown("#### 🗑️ Target & Delete Specific Sessions")
                 selected_session_to_delete = st.selectbox(
                     "Select Session to Delete (Event & Date)", 
-                    options=session_options if "Session ID" in att_df_inspect.columns else
+                    options=session_options if "Session ID" in att_df_inspect.columns else [],
+                    format_func=lambda x: f"{x['Event']} on {x['Date']} (ID: {x['Session ID']})",
+                    key="delete_session_select"
+                )
+                
+                if st.button("🗑️ Delete Selected Session"):
+                    target_id = selected_session_to_delete["Session ID"]
+                    st.session_state.attendance_records = [
+                        r for r in st.session_state.attendance_records 
+                        if isinstance(r, dict) and r.get("Session ID") != target_id
+                    ]
+                    save_attendance()
+                    st.success(f"Successfully deleted session: {selected_session_to_delete['Event']} on {selected_session_to_delete['Date']}")
+                    st.rerun()
+                
+                st.markdown("#### Current Attendance Records Table")
+                st.dataframe(att_df_inspect, use_container_width=True, hide_index=True)
+                
+                if st.button("🚨 WIPE ALL Attendance Records"):
+                    st.session_state.attendance_records = []
+                    save_attendance()
+                    st.warning("All attendance records wiped clean!")
+                    st.rerun()
+            else:
+                st.info("No attendance records currently logged.")
+
+        st.markdown("---")
+        
+        # --- SECTION 4: ROSTER & PROFILE EDITS ---
+        st.markdown("### ✏️ Individual Roster & Stats Editing")
+        admin_rank_cols = st.columns(5)
+        if admin_rank_cols[0].button("👑 Leaders", use_container_width=True, key="adm_btn_lead"): st.session_state.admin_rank_tab = "Leader"
+        if admin_rank_cols[1].button("🛡️ Officers", use_container_width=True, key="adm_btn_off"): st.session_state.admin_rank_tab = "Officer"
+        if admin_rank_cols[2].button("⚔️ Elites", use_container_width=True, key="adm_btn_elite"): st.session_state.admin_rank_tab = "Elite"
+        if admin_rank_cols[3].button("📜 A-M", use_container_width=True, key="adm_btn_am"): st.session_state
