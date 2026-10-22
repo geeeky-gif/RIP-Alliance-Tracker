@@ -510,4 +510,273 @@ elif page == "Attendance Thresholds":
         p_name = row["Player Name"]
         att_cnt, total_cnt, pct, _ = get_player_attendance_stats(p_name)
         if pct < threshold:
-            low_
+            low_att_list.append({"Player Name": p_name, "Alliance Rank": row["Alliance Rank"], "Battle Power": row["Battle Power"], "Events Attended": f"{att_cnt} / {total_cnt}", "Attendance %": f"{pct:.1f}%", "Status": row["Status"]})
+            
+    low_att_df = pd.DataFrame(low_att_list)
+    st.markdown(f"### ⚠️ Accounts Below **{threshold}%** Participation ({len(low_att_df)} Total)")
+    
+    t_rank_cols = st.columns(5)
+    if t_rank_cols[0].button("👑 Leaders", use_container_width=True, key="t_btn_lead"): st.session_state.thresh_rank_tab = "Leader"
+    if t_rank_cols[1].button("🛡️ Officers", use_container_width=True, key="t_btn_off"): st.session_state.thresh_rank_tab = "Officer"
+    if t_rank_cols[2].button("⚔️ Elites", use_container_width=True, key="t_btn_elite"): st.session_state.thresh_rank_tab = "Elite"
+    if t_rank_cols[3].button("📜 Members A-M", use_container_width=True, key="t_btn_am"): st.session_state.thresh_rank_tab = "Member_AM"
+    if t_rank_cols[4].button("📜 Members N-Z", use_container_width=True, key="t_btn_nz"): st.session_state.thresh_rank_tab = "Member_NZ"
+
+    t_tab = st.session_state.thresh_rank_tab
+    if not low_att_df.empty:
+        if t_tab == "Leader": t_filtered = low_att_df[low_att_df["Alliance Rank"].isin(["Alliance Leader", "Deputy"])]
+        elif t_tab == "Officer": t_filtered = low_att_df[low_att_df["Alliance Rank"] == "Officer"]
+        elif t_tab == "Elite": t_filtered = low_att_df[low_att_df["Alliance Rank"] == "Elite"]
+        elif t_tab == "Member_AM": t_filtered = low_att_df[(low_att_df["Alliance Rank"] == "Member") & low_att_df["Player Name"].apply(lambda x: x[0].upper() <= 'M' or not x[0].isalpha())]
+        else: t_filtered = low_att_df[(low_att_df["Alliance Rank"] == "Member") & low_att_df["Player Name"].apply(lambda x: x[0].upper() > 'M' and x[0].isalpha())]
+
+        if not t_filtered.empty:
+            st.dataframe(t_filtered[["Player Name", "Alliance Rank", "Battle Power", "Events Attended", "Attendance %", "Status"]], use_container_width=True, hide_index=True)
+        else:
+            st.success(f"🎉 No accounts in the **{t_tab}** category fall below {threshold}% attendance!")
+    else:
+        st.success(f"🎉 Zero accounts fall below {threshold}% attendance.")
+
+# ---------------------------------------------------------
+# PAGE 3: EVENTS DASHBOARD
+# ---------------------------------------------------------
+elif page == "Events Dashboard":
+    st.subheader("📅 Events Dashboard & Overview")
+    if st.session_state.attendance_records:
+        att_df = pd.DataFrame(st.session_state.attendance_records)
+        event_summary = []
+        for ev in st.session_state.events_list:
+            ev_records = att_df[att_df["Event"] == ev]
+            unique_sessions = ev_records["Session ID"].nunique() if "Session ID" in ev_records.columns else ev_records["Date"].nunique()
+            total_logs = len(ev_records)
+            event_summary.append({"Event Name": ev, "Total Sessions Logged": unique_sessions, "Total Recorded Exceptions": total_logs})
+        
+        summary_df = pd.DataFrame(event_summary)
+        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+        
+        st.markdown("---")
+        st.subheader("🔍 Logged Event Exception Records Browser")
+        selected_view_event = st.selectbox("Filter by Event Type:", ["All Events"] + st.session_state.events_list)
+        if selected_view_event == "All Events":
+            st.dataframe(att_df, use_container_width=True, hide_index=True)
+        else:
+            filtered_att = att_df[att_df["Event"] == selected_view_event]
+            st.dataframe(filtered_att, use_container_width=True, hide_index=True)
+    else:
+        st.info("No attendance events logged yet. Upload screenshots or add manual entries in the Admin Hub.")
+
+# ---------------------------------------------------------
+# PAGE 4: PLAYER ACTIVITY DASHBOARD
+# ---------------------------------------------------------
+elif page == "Player Activity Dashboard":
+    st.subheader("📊 Player Activity & Participation Dashboard")
+    if not st.session_state.roster_df.empty:
+        activity_data = []
+        for _, row in st.session_state.roster_df.iterrows():
+            p_name = row["Player Name"]
+            att_cnt, total_cnt, pct, miss_cnt = get_player_attendance_stats(p_name)
+            activity_data.append({
+                "Player Name": p_name,
+                "Alliance Rank": row["Alliance Rank"],
+                "Battle Power": row["Battle Power"],
+                "Events Attended": f"{att_cnt} / {total_cnt}",
+                "Attendance %": f"{pct:.1f}%",
+                "Missed Events": miss_cnt,
+                "Status": row["Status"]
+            })
+        activity_df = pd.DataFrame(activity_data)
+        
+        sort_col = st.selectbox("Sort Activity By:", ["Attendance %", "Battle Power", "Player Name", "Missed Events"])
+        if sort_col == "Attendance %":
+            activity_df["sort_val"] = activity_df["Attendance %"].str.rstrip('%').astype(float)
+            activity_df = activity_df.sort_values(by="sort_val", ascending=False).drop(columns=["sort_val"])
+        elif sort_col == "Battle Power":
+            activity_df = activity_df.sort_values(by="Battle Power", ascending=False)
+        elif sort_col == "Missed Events":
+            activity_df = activity_df.sort_values(by="Missed Events", ascending=True)
+        else:
+            activity_df = activity_df.sort_values(by="Player Name", ascending=True)
+
+        st.dataframe(activity_df[["Player Name", "Alliance Rank", "Battle Power", "Events Attended", "Attendance %", "Missed Events", "Status"]], use_container_width=True, hide_index=True)
+    else:
+        st.warning("No roster members found.")
+
+# ---------------------------------------------------------
+# PAGE 5: ALLIANCE OVERVIEW & STATS
+# ---------------------------------------------------------
+elif page == "Alliance Overview & Stats":
+    st.subheader("📊 Alliance Participation Overview")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Roster Members", len(st.session_state.roster_df))
+    c2.metric("Tracked Sessions", get_tracked_sessions_count())
+    c3.metric("Total Logged Exceptions", len(st.session_state.attendance_records) if st.session_state.attendance_records else 0)
+    st.markdown("---")
+    st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
+
+# ---------------------------------------------------------
+# PAGE 6: ADMIN & OPERATIONS HUB
+# ---------------------------------------------------------
+elif page == "Admin & Operations Hub":
+    st.subheader("⚙️ Admin & Operations Hub")
+    passcode = st.text_input("Enter Leadership Passcode to Unlock Hub:", type="password", key="admin_hub_pass")
+    
+    if passcode == "rip123":
+        st.success("Passcode accepted!")
+        
+        st.markdown("### 📸 Bulk Screenshot Uploader")
+        upload_type = st.radio("Select Upload Type:", ["Event Attendance (Multi-Event Auto-Detect)", "Player Info / Stats"], horizontal=True)
+        
+        file_uploader_key = f"screenshot_uploader_{st.session_state.uploader_key_counter}"
+        
+        if "Attendance" in upload_type:
+            st.markdown("💡 *Drop multiple event screenshots below and choose whether the scan represents players who **Did Not Enter** or **Entered**.*")
+            
+            # --- UPLOAD CONFIGURATION TOGGLES ---
+            col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
+            scan_mode_choice = col_cfg1.selectbox(
+                "📋 Scan List Type:", 
+                ["Not Entered (Absences)", "Entered (Attendees)"],
+                index=0
+            )
+            event_override_choice = col_cfg2.selectbox(
+                "📌 Event Override (Optional):", 
+                ["Auto-Detect from Screenshot"] + st.session_state.events_list
+            )
+            session_suffix_tag = col_cfg3.text_input("🏷️ Session Suffix (Optional):", value="", placeholder="e.g. War 1")
+            
+            uploaded_files = st.file_uploader("Choose attendance screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=file_uploader_key)
+            
+            col_up1, col_up2 = st.columns(2)
+            process_btn = col_up1.button("Process Batch Attendance")
+            clear_btn = col_up2.button("🧹 Clear Uploaded Images & Reset Uploader")
+            
+            if clear_btn:
+                st.session_state.uploader_key_counter += 1
+                st.rerun()
+                
+            if uploaded_files and process_btn:
+                with st.spinner("Running Smart OCR Parser..."):
+                    roster_names = st.session_state.roster_df["Player Name"].tolist()
+                    success_count = 0
+                    batch_stamp = int(datetime.now().timestamp())
+                    
+                    target_status_val = "Not Entered" if "Not Entered" in scan_mode_choice else "Entered"
+                    
+                    for file in uploaded_files:
+                        text = pytesseract.image_to_string(Image.open(file))
+                        detected_event, detected_date, matched_players = parse_attendance_screenshot_auto(text, roster_names, st.session_state.events_list)
+                        
+                        if event_override_choice != "Auto-Detect from Screenshot":
+                            detected_event = event_override_choice
+                        
+                        if session_suffix_tag.strip():
+                            session_id = f"{detected_date}_{detected_event}_{session_suffix_tag.strip()}"
+                        else:
+                            session_id = f"{detected_date}_{detected_event}_{batch_stamp}"
+                        
+                        for name in matched_players:
+                            existing_match = [
+                                r for r in st.session_state.attendance_records 
+                                if isinstance(r, dict) and r.get("Session ID") == session_id and r.get("Player") == name
+                            ]
+                            if not existing_match:
+                                st.session_state.attendance_records.append({
+                                    "Event": detected_event, 
+                                    "Date": detected_date, 
+                                    "Status": target_status_val,
+                                    "Player": name,
+                                    "Session ID": session_id
+                                })
+                                success_count += 1
+                    save_attendance()
+                    st.success(f"Successfully processed {len(uploaded_files)} screenshot(s) as **{scan_mode_choice}** and logged {success_count} entry/entries! CSV updated.")
+        else:
+            uploaded_files = st.file_uploader("Choose player stats screenshot(s)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=file_uploader_key)
+            
+            col_up1, col_up2 = st.columns(2)
+            process_btn = col_up1.button("Process Batch Player Stats")
+            clear_btn = col_up2.button("🧹 Clear Uploaded Images & Reset Uploader")
+            
+            if clear_btn:
+                st.session_state.uploader_key_counter += 1
+                st.rerun()
+                
+            if uploaded_files and process_btn:
+                with st.spinner("Running OCR Parser..."):
+                    roster_names = st.session_state.roster_df["Player Name"].tolist()
+                    success_count = 0
+                    for file in uploaded_files:
+                        text = pytesseract.image_to_string(Image.open(file))
+                        p_data = parse_player_info_screenshot(text, roster_names)
+                        p_name = p_data["Player Name"]
+                        if p_name:
+                            idx = st.session_state.roster_df[st.session_state.roster_df["Player Name"] == p_name].index[0]
+                            for field in ["Battle Power", "Lord Level", "Individual Reputation", "Kills", "Losses"]:
+                                if p_data[field] and not is_locked(p_name, field):
+                                    st.session_state.roster_df.at[idx, field] = p_data[field]
+                            for field in ["Castle Level", "Power Ranking", "Military Rank"]:
+                                if p_data[field] and not is_locked(p_name, field):
+                                    st.session_state.roster_df.at[idx, field] = str(p_data[field])
+                            save_roster()
+                            success_count += 1
+                    st.success(f"Successfully updated {success_count} player record(s).")
+
+        st.markdown("---")
+
+        with st.expander("💾 CSV Backup & Instant Restore Tools"):
+            c1, c2 = st.columns(2)
+            c1.download_button("📥 Download Roster CSV Backup", data=st.session_state.roster_df.to_csv(index=False).encode('utf-8'), file_name="roster_data_backup.csv", mime="text/csv", use_container_width=True)
+            uploaded_backup = c2.file_uploader("📤 Upload Roster CSV Backup", type=["csv"], key="restore_uploader")
+            if uploaded_backup is not None:
+                st.session_state.roster_df = pd.read_csv(uploaded_backup)
+                st.session_state.roster_df["Military Rank"] = st.session_state.roster_df["Military Rank"].astype(str)
+                st.session_state.roster_df["Player Name"] = st.session_state.roster_df["Player Name"].astype(str)
+                st.session_state.roster_df["Alliance Rank"] = st.session_state.roster_df["Alliance Rank"].astype(str)
+                st.session_state.roster_df["Status"] = st.session_state.roster_df["Status"].astype(str)
+                st.session_state.roster_df["Castle Level"] = st.session_state.roster_df["Castle Level"].astype(str)
+                save_roster()
+                st.success("🎉 Roster successfully restored!")
+
+            st.markdown("---")
+            att_backup_data = pd.DataFrame(st.session_state.attendance_records).to_csv(index=False).encode('utf-8') if st.session_state.attendance_records else "Event,Date,Status,Player,Session ID\n".encode('utf-8')
+            a1, a2 = st.columns(2)
+            a1.download_button("📥 Download Attendance CSV Backup", data=att_backup_data, file_name="attendance_data_backup.csv", mime="text/csv", use_container_width=True)
+            uploaded_att_backup = a2.file_uploader("📤 Upload Attendance CSV Backup", type=["csv"], key="att_restore_uploader")
+            if uploaded_att_backup is not None:
+                att_df_restored = pd.read_csv(uploaded_att_backup)
+                st.session_state.attendance_records = att_df_restored.to_dict('records')
+                save_attendance()
+                st.success("🎉 Attendance records successfully restored!")
+
+        # --- SECTION 3: MANUAL ATTENDANCE / ABSENCE MANAGEMENT ---
+        with st.expander("📝 Manual Event Attendance Management & Session Editing"):
+            st.markdown("#### Add Manual Attendance / Absence Entry")
+            with st.form("manual_attendance_form"):
+                m_event = st.selectbox("Event Type", st.session_state.events_list)
+                m_date = st.text_input("Event Date (YYYY-MM-DD)", value="2026-10-16")
+                m_player = st.selectbox("Player Name", sorted(st.session_state.roster_df["Player Name"].tolist()))
+                m_status = st.selectbox("Status", ["Not Entered", "Entered"])
+                
+                if st.form_submit_button("Add Record"):
+                    session_id = f"{m_date}_{m_event}_manual"
+                    st.session_state.attendance_records.append({
+                        "Event": m_event,
+                        "Date": str(m_date),
+                        "Status": m_status,
+                        "Player": m_player,
+                        "Session ID": session_id
+                    })
+                    save_attendance()
+                    st.success(f"Added record for {m_player} ({m_event} - {m_status}) and saved to CSV!")
+
+            st.markdown("---")
+            st.markdown("#### 🔄 Fix / Edit Existing Session Details (Event & Date)")
+            
+            if st.session_state.attendance_records:
+                att_df_inspect = pd.DataFrame(st.session_state.attendance_records)
+                if "Session ID" in att_df_inspect.columns:
+                    session_options = att_df_inspect[["Session ID", "Event", "Date"]].drop_duplicates().to_dict('records')
+                    
+                    with st.form("swap_session_form"):
+                        selected_session_to_swap = st.selectbox(
+                            "
