@@ -134,6 +134,31 @@ EVENTS_LIST = [
     "Alliance Conquest", "Frenzy", "Void", "Elite Adventures"
 ]
 
+CASTLE_LEVEL_OPTIONS = [str(i) for i in range(1, 41)] + ["S1", "S2", "S3"]
+LORD_LEVEL_OPTIONS = [str(i) for i in range(0, 81)]
+MILITARY_RANK_OPTIONS = [
+    "",
+    "Sargeant",
+    "Sergant Major",
+    "Liutenant Knight",
+    "Centurion",
+    "Sriker Battalion",
+    "Legion Officer",
+    "Legion Commander",
+    "High Commander",
+    "Royal Commander",
+    "Captain",
+    "General",
+    "Commander-in-Chief",
+    "Overseer",
+    "Grand Marshal",
+    "Star Marshal",
+    "Legendary Marshal",
+    "War Lord"
+]
+STATUS_OPTIONS = ["Active", "Inactive"]
+ALLIANCE_RANK_OPTIONS = ["Alliance Leader", "Deputy", "Officer", "Elite", "Member"]
+
 # ---------------------------------------------------------
 # STATE INITIALIZATION
 # ---------------------------------------------------------
@@ -142,22 +167,30 @@ if "roster_df" not in st.session_state:
         try:
             st.session_state.roster_df = pd.read_csv(ROSTER_FILE, dtype=str)
         except Exception:
-            st.session_state.roster_df = pd.DataFrame(columns=["Player Name", "Castle Level", "Alliance Rank"])
+            st.session_state.roster_df = pd.DataFrame(columns=["Player Name", "Castle Level", "Lord Level", "Military Rank", "Alliance Rank", "Status"])
     else:
         initial_roster = []
         for i in range(1, 101):
             initial_roster.append({
                 "Player Name": f"Player_{i:03d}",
                 "Castle Level": "40" if i <= 10 else "35",
-                "Alliance Rank": "Leader" if i == 1 else ("Officer" if i <= 5 else "Member")
+                "Lord Level": "50",
+                "Military Rank": "Captain",
+                "Alliance Rank": "Leader" if i == 1 else ("Officer" if i <= 5 else "Member"),
+                "Status": "Active"
             })
         st.session_state.roster_df = pd.DataFrame(initial_roster)
         st.session_state.roster_df.to_csv(ROSTER_FILE, index=False)
 
+# Ensure all expected columns exist in roster
+for col, default_val in [("Castle Level", "40"), ("Lord Level", "50"), ("Military Rank", ""), ("Alliance Rank", "Member"), ("Status", "Active")]:
+    if col not in st.session_state.roster_df.columns:
+        st.session_state.roster_df[col] = default_val
+
 if "attendance_df" not in st.session_state:
     if os.path.exists(ATTENDANCE_FILE):
         try:
-            st.session_state.attendance_df = pd.read_csv(ATTENDANCE_FILE)
+            st.session_state.attendance_df = pd.read_csv(ATTENDANCE_FILE, dtype=str)
             if not st.session_state.attendance_df.empty:
                 if "Attended" in st.session_state.attendance_df.columns and "Status" not in st.session_state.attendance_df.columns:
                     st.session_state.attendance_df["Status"] = st.session_state.attendance_df["Attended"].apply(
@@ -176,7 +209,9 @@ def save_attendance():
 
 def get_sorted_roster_names():
     if "roster_df" in st.session_state and not st.session_state.roster_df.empty:
-        names = st.session_state.roster_df["Player Name"].dropna().astype(str).tolist()
+        # Only active players are pulled into event session grids
+        active_df = st.session_state.roster_df[st.session_state.roster_df["Status"] == "Active"]
+        names = active_df["Player Name"].dropna().astype(str).tolist()
         return sorted(names, key=lambda x: x.lower())
     return []
 
@@ -204,40 +239,49 @@ if page == "📈 Analytics Dashboard":
     if roster_df.empty:
         st.warning("No players found in roster.")
     else:
+        # Only evaluate metrics for active members or sessions where they were active
+        active_roster_df = roster_df[roster_df["Status"] == "Active"]
+        active_names = active_roster_df["Player Name"].tolist()
+        
         total_sessions = att_df["Session ID"].nunique() if not att_df.empty else 0
         
         stats = []
         for _, p_row in roster_df.iterrows():
             p_name = p_row["Player Name"]
+            p_status = p_row["Status"]
+            
             if total_sessions > 0 and not att_df.empty:
-                p_logs = att_df[att_df["Player Name"] == p_name]
+                p_logs = att_df[(att_df["Player Name"] == p_name) & (att_df["Status"].isin(["Active", "Zero Points", "Absent"]))]
                 active_cnt = len(p_logs[p_logs["Status"] == "Active"])
                 zero_cnt = len(p_logs[p_logs["Status"] == "Zero Points"])
                 absent_cnt = len(p_logs[p_logs["Status"] == "Absent"])
                 
+                player_total_logged = active_cnt + zero_cnt + absent_cnt
                 showed_up_cnt = active_cnt + zero_cnt
-                attendance_rate = (showed_up_cnt / total_sessions) * 100
+                attendance_rate = (showed_up_cnt / player_total_logged) * 100 if player_total_logged > 0 else 0.0
             else:
-                active_cnt, zero_cnt, absent_cnt = 0, 0, 0
-                showed_up_cnt = 0
-                attendance_rate = 100.0 if total_sessions == 0 else 0.0
+                active_cnt, zero_cnt, absent_cnt, player_total_logged = 0, 0, 0, 0
+                attendance_rate = 0.0
                 
             stats.append({
                 "Player Name": p_name,
                 "Castle Level": p_row.get("Castle Level", "—"),
+                "Lord Level": p_row.get("Lord Level", "—"),
                 "Alliance Rank": p_row.get("Alliance Rank", "—"),
+                "Member Status": p_status,
                 "Active Count": active_cnt,
                 "Zero Points Count": zero_cnt,
-                "Total Sessions": total_sessions,
+                "Total Logged": player_total_logged,
                 "Attendance Rate": round(attendance_rate, 1)
             })
             
         summary_df = pd.DataFrame(stats)
+        active_summary_df = summary_df[summary_df["Member Status"] == "Active"]
         
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Active Roster", len(roster_df))
+        m1.metric("Active Roster", len(active_summary_df))
         m2.metric("Tracked Events", total_sessions)
-        avg_att = summary_df["Attendance Rate"].mean() if not summary_df.empty else 0
+        avg_att = active_summary_df["Attendance Rate"].mean() if not active_summary_df.empty else 0
         m3.metric("Alliance Turnout", f"{avg_att:.1f}%")
         total_zero_pts = summary_df["Zero Points Count"].sum() if not summary_df.empty else 0
         m4.metric("Zero-Point Instances", total_zero_pts, delta=f"-{total_zero_pts} inactive" if total_zero_pts > 0 else "Optimal", delta_color="inverse")
@@ -252,22 +296,23 @@ if page == "📈 Analytics Dashboard":
                 st.bar_chart(status_counts, color="#38bdf8")
                 
             with c_chart2:
-                st.markdown("#### 🏆 Top Attendance Performers")
-                top_performers = summary_df.sort_values(by="Attendance Rate", ascending=False).head(10)
-                st.bar_chart(top_performers.set_index("Player Name")["Attendance Rate"], color="#818cf8")
+                st.markdown("#### 🏆 Top Attendance Performers (Active Only)")
+                top_performers = active_summary_df.sort_values(by="Attendance Rate", ascending=False).head(10)
+                if not top_performers.empty:
+                    st.bar_chart(top_performers.set_index("Player Name")["Attendance Rate"], color="#818cf8")
             st.markdown("---")
 
         st.markdown("#### 📋 Complete Member Performance Matrix")
         display_df = summary_df.copy()
-        display_df["Turnout"] = (display_df["Active Count"] + display_df["Zero Points Count"]).astype(str) + " / " + display_df["Total Sessions"].astype(str)
+        display_df["Turnout"] = (display_df["Active Count"] + display_df["Zero Points Count"]).astype(str) + " / " + display_df["Total Logged"].astype(str)
         display_df["Active Part."] = display_df["Active Count"].astype(str)
         display_df["Zero Points"] = display_df["Zero Points Count"].astype(str)
         display_df["Attendance %"] = display_df["Attendance Rate"].astype(str) + "%"
         
-        st.dataframe(display_df[["Player Name", "Castle Level", "Alliance Rank", "Turnout", "Active Part.", "Zero Points", "Attendance %"]], use_container_width=True, hide_index=True)
+        st.dataframe(display_df[["Player Name", "Castle Level", "Lord Level", "Alliance Rank", "Member Status", "Turnout", "Active Part.", "Zero Points", "Attendance %"]], use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# PAGE 2: QUICK LOG / EDIT SESSIONS (ALPHABETICAL TABLE EDITOR)
+# PAGE 2: QUICK LOG / EDIT SESSIONS
 # ---------------------------------------------------------
 elif page == "📝 Quick Log / Edit Sessions":
     st.subheader("📝 Event Session Management")
@@ -278,7 +323,7 @@ elif page == "📝 Quick Log / Edit Sessions":
     
     with tab_new:
         if not roster_names:
-            st.error("Roster is empty. Please add players first.")
+            st.error("No active players found in roster. Please update member statuses to 'Active' in the Roster Editor.")
         else:
             col1, col2, col3 = st.columns(3)
             selected_event = col1.selectbox("Event Type", EVENTS_LIST, key="new_ev")
@@ -289,10 +334,9 @@ elif page == "📝 Quick Log / Edit Sessions":
             session_id = f"{event_date}_{selected_event}_{unique_suffix}"
             
             st.markdown("---")
-            st.markdown("### 📋 Alphabetical Attendance Matrix")
-            st.info("All members are listed alphabetically. Default status is **Active**. You can change any player's status directly in the table below.")
+            st.markdown("### 📋 Active Members Attendance Matrix")
+            st.info("Listing **Active** members alphabetically. Default status is **Active**. Inactive members are excluded so their replacements start clean.")
             
-            # Construct alphabetical data frame for editable session grid
             session_grid_df = pd.DataFrame({
                 "Player Name": roster_names,
                 "Status": ["Active"] * len(roster_names)
@@ -351,10 +395,13 @@ elif page == "📝 Quick Log / Edit Sessions":
                 current_statuses = {row["Player Name"]: row["Status"] for _, row in session_logs.iterrows()}
                 
                 st.markdown(f"### Editing Session: **{selected_session_to_edit['Event']}** ({selected_session_to_edit['Date']})")
-                st.info("Alphabetical player list. Modify statuses in the table and click **Update Session Matrix**.")
+                st.info("Modify statuses in the table below and click **Update Session Matrix**.")
                 
                 edit_grid_data = []
-                for p_name in roster_names:
+                # Use all recorded player names for this specific session so historical logs remain fully editable even if a member becomes inactive later
+                session_players = sorted(session_logs["Player Name"].dropna().unique().tolist(), key=lambda x: x.lower())
+                
+                for p_name in session_players:
                     stat = current_statuses.get(p_name, "Active")
                     if stat not in ["Active", "Zero Points", "Absent"]:
                         stat = "Active"
@@ -378,107 +425,4 @@ elif page == "📝 Quick Log / Edit Sessions":
                 )
                 
                 st.markdown("---")
-                col_save, col_del = st.columns([2, 1])
-                
-                if col_save.button("💾 Update Session Matrix", type="primary", use_container_width=True):
-                    updated_records = []
-                    for _, row in updated_session_df.iterrows():
-                        updated_records.append({
-                            "Session ID": target_session_id,
-                            "Event": selected_session_to_edit["Event"],
-                            "Date": selected_session_to_edit["Date"],
-                            "Player Name": row["Player Name"],
-                            "Status": row["Status"]
-                        })
-                    
-                    st.session_state.attendance_df = st.session_state.attendance_df[st.session_state.attendance_df["Session ID"] != target_session_id]
-                    updated_df = pd.DataFrame(updated_records)
-                    st.session_state.attendance_df = pd.concat([st.session_state.attendance_df, updated_df], ignore_index=True)
-                    save_attendance()
-                    st.success("Session successfully updated!")
-                    
-                if col_del.button("🗑️ Delete Entire Session", use_container_width=True):
-                    st.session_state.attendance_df = st.session_state.attendance_df[st.session_state.attendance_df["Session ID"] != target_session_id]
-                    save_attendance()
-                    st.warning("Session deleted permanently!")
-                    st.rerun()
-
-# ---------------------------------------------------------
-# PAGE 3: EDIT ROSTER
-# ---------------------------------------------------------
-elif page == "✏️ Edit Roster":
-    st.subheader("✏️ Direct Roster Management")
-    st.markdown("Modify player names, castle levels, or ranks directly on the interactive table.")
-    
-    enable_editing = st.toggle("🔓 Enable Table Editing Mode", value=False)
-    
-    if enable_editing:
-        st.success("Editing mode active! Double click any cell to edit details, then click 'Save Roster Changes' below.")
-        edited_df = st.data_editor(st.session_state.roster_df, num_rows="dynamic", use_container_width=True, hide_index=True)
-        
-        if st.button("💾 Save Roster Changes", type="primary"):
-            st.session_state.roster_df = edited_df
-            save_roster()
-            st.success("Roster updated successfully!")
-    else:
-        st.info("Toggle the switch above to unlock table editing.")
-        st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
-
-# ---------------------------------------------------------
-# PAGE 4: UPLOAD ROSTER CSV
-# ---------------------------------------------------------
-elif page == "📁 Upload Roster CSV":
-    st.subheader("📁 Simple Roster Import")
-    st.markdown("Upload a CSV file containing columns: `Player Name`, `Castle Level`, `Alliance Rank`.")
-    
-    uploaded_file = st.file_uploader("Choose CSV file", type=["csv"])
-    
-    if uploaded_file is not None:
-        try:
-            uploaded_df = pd.read_csv(uploaded_file, dtype=str)
-            st.markdown("#### Preview Uploaded Data:")
-            st.dataframe(uploaded_df.head(), use_container_width=True)
-            
-            if st.button("Confirm & Overwrite Roster", type="primary"):
-                uploaded_df.columns = [c.strip() for c in uploaded_df.columns]
-                for col in ["Player Name", "Castle Level", "Alliance Rank"]:
-                    if col not in uploaded_df.columns:
-                        uploaded_df[col] = "—"
-                
-                st.session_state.roster_df = uploaded_df[["Player Name", "Castle Level", "Alliance Rank"]]
-                save_roster()
-                st.success("Roster successfully replaced and saved!")
-        except Exception as e:
-            st.error(f"Error reading CSV file: {e}")
-
-# ---------------------------------------------------------
-# PAGE 5: DATA MANAGEMENT
-# ---------------------------------------------------------
-elif page == "⚙️ Data Management":
-    st.subheader("⚙️ Data Management & Exports")
-    
-    c1, c2 = st.columns(2)
-    
-    with c1:
-        st.markdown("### Export Data")
-        st.download_button(
-            "📥 Download Roster CSV",
-            data=st.session_state.roster_df.to_csv(index=False).encode("utf-8"),
-            file_name="roster_data.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-        st.download_button(
-            "📥 Download Attendance Log CSV",
-            data=st.session_state.attendance_df.to_csv(index=False).encode("utf-8"),
-            file_name="attendance_matrix.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-        
-    with c2:
-        st.markdown("### Reset Data")
-        if st.button("🚨 Clear All Attendance Logs"):
-            st.session_state.attendance_df = pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Status"])
-            save_attendance()
-            st.warning("All attendance records cleared!")
+                col_save, col_del = st.columns
