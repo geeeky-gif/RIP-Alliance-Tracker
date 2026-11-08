@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
-from datetime import datetime
+from datetime import datetime, date
 
 st.set_page_config(page_title="RIP Alliance Command Center", layout="wide")
 
@@ -162,12 +162,14 @@ ALLIANCE_RANK_OPTIONS = ["Alliance Leader", "Deputy", "Officer", "Elite", "Membe
 # ---------------------------------------------------------
 # STATE INITIALIZATION
 # ---------------------------------------------------------
+today_str = str(date.today())
+
 if "roster_df" not in st.session_state:
     if os.path.exists(ROSTER_FILE):
         try:
             st.session_state.roster_df = pd.read_csv(ROSTER_FILE, dtype=str)
         except Exception:
-            st.session_state.roster_df = pd.DataFrame(columns=["Player Name", "Castle Level", "Lord Level", "Military Rank", "Alliance Rank", "Status"])
+            st.session_state.roster_df = pd.DataFrame(columns=["Player Name", "Castle Level", "Lord Level", "Military Rank", "Alliance Rank", "Status", "Join Date"])
     else:
         initial_roster = []
         for i in range(1, 101):
@@ -177,13 +179,14 @@ if "roster_df" not in st.session_state:
                 "Lord Level": "50",
                 "Military Rank": "Captain",
                 "Alliance Rank": "Leader" if i == 1 else ("Officer" if i <= 5 else "Member"),
-                "Status": "Active"
+                "Status": "Active",
+                "Join Date": today_str
             })
         st.session_state.roster_df = pd.DataFrame(initial_roster)
         st.session_state.roster_df.to_csv(ROSTER_FILE, index=False)
 
 # Ensure all expected columns exist in roster
-for col, default_val in [("Castle Level", "40"), ("Lord Level", "50"), ("Military Rank", ""), ("Alliance Rank", "Member"), ("Status", "Active")]:
+for col, default_val in [("Castle Level", "40"), ("Lord Level", "50"), ("Military Rank", ""), ("Alliance Rank", "Member"), ("Status", "Active"), ("Join Date", today_str)]:
     if col not in st.session_state.roster_df.columns:
         st.session_state.roster_df[col] = default_val
 
@@ -191,11 +194,6 @@ if "attendance_df" not in st.session_state:
     if os.path.exists(ATTENDANCE_FILE):
         try:
             st.session_state.attendance_df = pd.read_csv(ATTENDANCE_FILE, dtype=str)
-            if not st.session_state.attendance_df.empty:
-                if "Attended" in st.session_state.attendance_df.columns and "Status" not in st.session_state.attendance_df.columns:
-                    st.session_state.attendance_df["Status"] = st.session_state.attendance_df["Attended"].apply(
-                        lambda x: "Active" if str(x).lower() == "true" else "Absent"
-                    )
         except Exception:
             st.session_state.attendance_df = pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Status"])
     else:
@@ -209,7 +207,6 @@ def save_attendance():
 
 def get_sorted_roster_names():
     if "roster_df" in st.session_state and not st.session_state.roster_df.empty:
-        # Only active players are pulled into event session grids
         active_df = st.session_state.roster_df[st.session_state.roster_df["Status"] == "Active"]
         names = active_df["Player Name"].dropna().astype(str).tolist()
         return sorted(names, key=lambda x: x.lower())
@@ -222,13 +219,233 @@ st.sidebar.markdown("### 📊 NAVIGATION")
 page = st.sidebar.radio("Select View:", [
     "📈 Analytics Dashboard",
     "📝 Quick Log / Edit Sessions",
-    "✏️ Edit Roster",
+import streamlit as st
+import pandas as pd
+import os
+from datetime import datetime, date
+
+st.set_page_config(page_title="RIP Alliance Command Center", layout="wide")
+
+# ---------------------------------------------------------
+# HIGH-PERFORMANCE COMMAND THEME (DARK GLOW & GLASSMORPHISM)
+# ---------------------------------------------------------
+st.markdown(
+    """
+    <style>
+        .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+            background-color: #080b11 !important;
+            color: #f1f5f9 !important;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        [data-testid="stSidebar"] {
+            background-color: #0c1017 !important;
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        [data-testid="stSidebar"] .stRadio label {
+            color: #94a3b8 !important;
+            font-weight: 500;
+        }
+        .command-hero {
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.8) 100%);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 14px;
+            padding: 24px 28px;
+            box-shadow: 0 10px 30px -10px rgba(99, 102, 241, 0.2);
+            backdrop-filter: blur(10px);
+            margin-bottom: 24px;
+        }
+        .command-hero h1 {
+            color: #ffffff !important;
+            margin: 0;
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            background: linear-gradient(90deg, #ffffff 30%, #818cf8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .command-hero p {
+            color: #94a3b8 !important;
+            margin: 6px 0 0 0;
+            font-size: 14px;
+        }
+        [data-testid="stMetric"] {
+            background: rgba(15, 23, 42, 0.6) !important;
+            border: 1px solid rgba(255, 255, 255, 0.07) !important;
+            padding: 16px 20px !important;
+            border-radius: 12px !important;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2) !important;
+            backdrop-filter: blur(8px);
+        }
+        [data-testid="stMetricLabel"] {
+            color: #94a3b8 !important;
+            font-size: 12px !important;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+        [data-testid="stMetricValue"] {
+            color: #38bdf8 !important;
+            font-size: 24px !important;
+            font-weight: 700;
+        }
+        [data-testid="stDataFrame"] {
+            background-color: rgba(15, 23, 42, 0.4) !important;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.07);
+        }
+        .stButton button {
+            background: rgba(30, 41, 59, 0.7);
+            color: #f1f5f9;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.25s ease;
+        }
+        .stButton button:hover {
+            background: rgba(51, 65, 85, 0.9);
+            border-color: #38bdf8;
+            color: #ffffff;
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.3);
+        }
+        button[kind="primary"] {
+            background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%) !important;
+            color: #ffffff !important;
+            border: none !important;
+            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
+        }
+        button[kind="primary"]:hover {
+            background: linear-gradient(135deg, #0369a1 0%, #1d4ed8 100%) !important;
+            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.6);
+        }
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 8px;
+            background-color: rgba(15, 23, 42, 0.5);
+            padding: 6px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .stTabs [data-baseweb="tab"] {
+            color: #94a3b8;
+            border-radius: 6px;
+            font-weight: 600;
+        }
+        .stTabs [aria-selected="true"] {
+            background: #2563eb !important;
+            color: white !important;
+        }
+    </style>
+    <div class="command-hero">
+        <h1>🛡️ RIP ALLIANCE COMMAND CENTER</h1>
+        <p>Operational Intelligence & Member Analytics Hub</p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# ---------------------------------------------------------
+# CONSTANTS & FILE PATHS
+# ---------------------------------------------------------
+ROSTER_FILE = "roster_data.csv"
+ATTENDANCE_FILE = "attendance_matrix.csv"
+
+EVENTS_LIST = [
+    "Elite Wars", "Fortress War", "Realm Conquest", 
+    "Realm Invasion", "Territory Defense", "Territory Expulsion", 
+    "Alliance Conquest", "Frenzy", "Void", "Elite Adventures"
+]
+
+CASTLE_LEVEL_OPTIONS = [str(i) for i in range(1, 41)] + ["S1", "S2", "S3"]
+LORD_LEVEL_OPTIONS = [str(i) for i in range(0, 81)]
+MILITARY_RANK_OPTIONS = [
+    "",
+    "Sargeant",
+    "Sergant Major",
+    "Liutenant Knight",
+    "Centurion",
+    "Sriker Battalion",
+    "Legion Officer",
+    "Legion Commander",
+    "High Commander",
+    "Royal Commander",
+    "Captain",
+    "General",
+    "Commander-in-Chief",
+    "Overseer",
+    "Grand Marshal",
+    "Star Marshal",
+    "Legendary Marshal",
+    "War Lord"
+]
+STATUS_OPTIONS = ["Active", "Inactive"]
+ALLIANCE_RANK_OPTIONS = ["Alliance Leader", "Deputy", "Officer", "Elite", "Member"]
+
+# ---------------------------------------------------------
+# STATE INITIALIZATION
+# ---------------------------------------------------------
+today_str = str(date.today())
+
+if "roster_df" not in st.session_state:
+    if os.path.exists(ROSTER_FILE):
+        try:
+            st.session_state.roster_df = pd.read_csv(ROSTER_FILE, dtype=str)
+        except Exception:
+            st.session_state.roster_df = pd.DataFrame(columns=["Player Name", "Castle Level", "Lord Level", "Military Rank", "Alliance Rank", "Status", "Join Date"])
+    else:
+        initial_roster = []
+        for i in range(1, 101):
+            initial_roster.append({
+                "Player Name": f"Player_{i:03d}",
+                "Castle Level": "40" if i <= 10 else "35",
+                "Lord Level": "50",
+                "Military Rank": "Captain",
+                "Alliance Rank": "Leader" if i == 1 else ("Officer" if i <= 5 else "Member"),
+                "Status": "Active",
+                "Join Date": today_str
+            })
+        st.session_state.roster_df = pd.DataFrame(initial_roster)
+        st.session_state.roster_df.to_csv(ROSTER_FILE, index=False)
+
+for col, default_val in [("Castle Level", "40"), ("Lord Level", "50"), ("Military Rank", ""), ("Alliance Rank", "Member"), ("Status", "Active"), ("Join Date", today_str)]:
+    if col not in st.session_state.roster_df.columns:
+        st.session_state.roster_df[col] = default_val
+
+if "attendance_df" not in st.session_state:
+    if os.path.exists(ATTENDANCE_FILE):
+        try:
+            st.session_state.attendance_df = pd.read_csv(ATTENDANCE_FILE, dtype=str)
+        except Exception:
+            st.session_state.attendance_df = pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Status"])
+    else:
+        st.session_state.attendance_df = pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Status"])
+
+def save_roster():
+    st.session_state.roster_df.to_csv(ROSTER_FILE, index=False)
+
+def save_attendance():
+    st.session_state.attendance_df.to_csv(ATTENDANCE_FILE, index=False)
+
+def get_sorted_roster_names():
+    if "roster_df" in st.session_state and not st.session_state.roster_df.empty:
+        active_df = st.session_state.roster_df[st.session_state.roster_df["Status"] == "Active"]
+        names = active_df["Player Name"].dropna().astype(str).tolist()
+        return sorted(names, key=lambda x: x.lower())
+    return []
+
+# ---------------------------------------------------------
+# SIDEBAR NAVIGATION
+# ---------------------------------------------------------
+st.sidebar.markdown("### 📊 NAVIGATION")
+page = st.sidebar.radio("Select View:", [
+    "📈 Analytics Dashboard",
+    "📝 Quick Log / Edit Sessions",
+    "✏️ Edit & Add Roster",
     "📁 Upload Roster CSV",
     "⚙️ Data Management"
 ])
 
 # ---------------------------------------------------------
-# PAGE 1: ANALYTICS DASHBOARD
+# PAGE 1: ANALYTICS DASHBOARD (JOIN-DATE AWARE)
 # ---------------------------------------------------------
 if page == "📈 Analytics Dashboard":
     st.subheader("📈 Alliance Intelligence & Attendance Analytics")
@@ -239,29 +456,44 @@ if page == "📈 Analytics Dashboard":
     if roster_df.empty:
         st.warning("No players found in roster.")
     else:
-        # Only evaluate metrics for active members or sessions where they were active
-        active_roster_df = roster_df[roster_df["Status"] == "Active"]
-        active_names = active_roster_df["Player Name"].tolist()
-        
         total_sessions = att_df["Session ID"].nunique() if not att_df.empty else 0
         
         stats = []
         for _, p_row in roster_df.iterrows():
             p_name = p_row["Player Name"]
             p_status = p_row["Status"]
+            join_date_str = str(p_row.get("Join Date", "2000-01-01"))
             
+            try:
+                p_join_date = datetime.strptime(join_date_str, "%Y-%m-%d").date()
+            except Exception:
+                p_join_date = date(2000, 1, 1)
+            
+            # Filter attendance logs to only sessions happening on or after player's join date
             if total_sessions > 0 and not att_df.empty:
-                p_logs = att_df[(att_df["Player Name"] == p_name) & (att_df["Status"].isin(["Active", "Zero Points", "Absent"]))]
+                # Find all unique session dates
+                session_dates = att_df[["Session ID", "Date"]].drop_duplicates()
+                valid_session_ids = []
+                for _, s_row in session_dates.iterrows():
+                    try:
+                        s_date = datetime.strptime(str(s_row["Date"]), "%Y-%m-%d").date()
+                    except Exception:
+                        s_date = date(2000, 1, 1)
+                    if s_date >= p_join_date:
+                        valid_session_ids.append(s_row["Session ID"])
+                
+                # Filter logs for this player matching valid sessions
+                p_logs = att_df[(att_df["Player Name"] == p_name) & (att_df["Session ID"].isin(valid_session_ids))]
                 active_cnt = len(p_logs[p_logs["Status"] == "Active"])
                 zero_cnt = len(p_logs[p_logs["Status"] == "Zero Points"])
                 absent_cnt = len(p_logs[p_logs["Status"] == "Absent"])
                 
-                player_total_logged = active_cnt + zero_cnt + absent_cnt
+                player_total_eligible = len(valid_session_ids)
                 showed_up_cnt = active_cnt + zero_cnt
-                attendance_rate = (showed_up_cnt / player_total_logged) * 100 if player_total_logged > 0 else 0.0
+                attendance_rate = (showed_up_cnt / player_total_eligible) * 100 if player_total_eligible > 0 else 100.0
             else:
-                active_cnt, zero_cnt, absent_cnt, player_total_logged = 0, 0, 0, 0
-                attendance_rate = 0.0
+                active_cnt, zero_cnt, absent_cnt, player_total_eligible = 0, 0, 0, 0
+                attendance_rate = 100.0
                 
             stats.append({
                 "Player Name": p_name,
@@ -269,9 +501,10 @@ if page == "📈 Analytics Dashboard":
                 "Lord Level": p_row.get("Lord Level", "—"),
                 "Alliance Rank": p_row.get("Alliance Rank", "—"),
                 "Member Status": p_status,
+                "Join Date": join_date_str,
                 "Active Count": active_cnt,
                 "Zero Points Count": zero_cnt,
-                "Total Logged": player_total_logged,
+                "Eligible Sessions": player_total_eligible,
                 "Attendance Rate": round(attendance_rate, 1)
             })
             
@@ -302,14 +535,14 @@ if page == "📈 Analytics Dashboard":
                     st.bar_chart(top_performers.set_index("Player Name")["Attendance Rate"], color="#818cf8")
             st.markdown("---")
 
-        st.markdown("#### 📋 Complete Member Performance Matrix")
+        st.markdown("#### 📋 Complete Member Performance Matrix (Join-Date Filtered)")
         display_df = summary_df.copy()
-        display_df["Turnout"] = (display_df["Active Count"] + display_df["Zero Points Count"]).astype(str) + " / " + display_df["Total Logged"].astype(str)
+        display_df["Turnout"] = (display_df["Active Count"] + display_df["Zero Points Count"]).astype(str) + " / " + display_df["Eligible Sessions"].astype(str)
         display_df["Active Part."] = display_df["Active Count"].astype(str)
         display_df["Zero Points"] = display_df["Zero Points Count"].astype(str)
         display_df["Attendance %"] = display_df["Attendance Rate"].astype(str) + "%"
         
-        st.dataframe(display_df[["Player Name", "Castle Level", "Lord Level", "Alliance Rank", "Member Status", "Turnout", "Active Part.", "Zero Points", "Attendance %"]], use_container_width=True, hide_index=True)
+        st.dataframe(display_df[["Player Name", "Castle Level", "Lord Level", "Alliance Rank", "Member Status", "Join Date", "Turnout", "Active Part.", "Zero Points", "Attendance %"]], use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
 # PAGE 2: QUICK LOG / EDIT SESSIONS
@@ -323,7 +556,7 @@ elif page == "📝 Quick Log / Edit Sessions":
     
     with tab_new:
         if not roster_names:
-            st.error("No active players found in roster. Please update member statuses to 'Active' in the Roster Editor.")
+            st.error("No active players found in roster. Please add players in the Roster Editor.")
         else:
             col1, col2, col3 = st.columns(3)
             selected_event = col1.selectbox("Event Type", EVENTS_LIST, key="new_ev")
@@ -335,7 +568,7 @@ elif page == "📝 Quick Log / Edit Sessions":
             
             st.markdown("---")
             st.markdown("### 📋 Active Members Attendance Matrix")
-            st.info("Listing **Active** members alphabetically. Default status is **Active**. Inactive members are excluded so their replacements start clean.")
+            st.info("Listing **Active** members alphabetically.")
             
             session_grid_df = pd.DataFrame({
                 "Player Name": roster_names,
@@ -398,7 +631,6 @@ elif page == "📝 Quick Log / Edit Sessions":
                 st.info("Modify statuses in the table below and click **Update Session Matrix**.")
                 
                 edit_grid_data = []
-                # Use all recorded player names for this specific session so historical logs remain fully editable even if a member becomes inactive later
                 session_players = sorted(session_logs["Player Name"].dropna().unique().tolist(), key=lambda x: x.lower())
                 
                 for p_name in session_players:
@@ -451,11 +683,48 @@ elif page == "📝 Quick Log / Edit Sessions":
                     st.rerun()
 
 # ---------------------------------------------------------
-# PAGE 3: EDIT ROSTER (DROPDOWN EDITOR & INACTIVE TOGGLE)
+# PAGE 3: EDIT & ADD ROSTER
 # ---------------------------------------------------------
-elif page == "✏️ Edit Roster":
-    st.subheader("✏️ Direct Roster Management")
-    st.markdown("Manage player profiles, update dropdown attributes, and set members as **Inactive** to freeze historical stats for castle takeovers and renames.")
+elif page == "✏️ Edit & Add Roster":
+    st.subheader("✏️ Roster Management & Member Additions")
+    st.markdown("Edit existing profiles, retire members by setting status to **Inactive**, or **Add a New Member** with a specific Join Date so past events aren't held against them.")
+    
+    # Add New Member Form Section
+    with st.expander("➕ Add New Member", expanded=False):
+        with st.form("add_member_form"):
+            c_new1, c_new2, c_new3 = st.columns(3)
+            new_p_name = c_new1.text_input("Player Name")
+            new_p_castle = c_new2.selectbox("Castle Level", CASTLE_LEVEL_OPTIONS, index=39) # default 40
+            new_p_lord = c_new3.selectbox("Lord Level", LORD_LEVEL_OPTIONS, index=50)
+            
+            c_new4, c_new5, c_new6 = st.columns(3)
+            new_p_mil = c_new4.selectbox("Military Rank", MILITARY_RANK_OPTIONS)
+            new_p_rank = c_new5.selectbox("Alliance Rank", ALLIANCE_RANK_OPTIONS, index=4) # Member
+            new_p_join = c_new6.date_input("Join Date", date.today(), help="Events before this date will be ignored in their attendance percentage.")
+            
+            submitted = st.form_submit_button("Add Member to Roster", type="primary")
+            if submitted:
+                if new_p_name.strip() == "":
+                    st.error("Player name cannot be empty.")
+                elif new_p_name.strip() in st.session_state.roster_df["Player Name"].values:
+                    st.error("A player with this name already exists in the roster.")
+                else:
+                    new_row = pd.DataFrame([{
+                        "Player Name": new_p_name.strip(),
+                        "Castle Level": new_p_castle,
+                        "Lord Level": new_p_lord,
+                        "Military Rank": new_p_mil,
+                        "Alliance Rank": new_p_rank,
+                        "Status": "Active",
+                        "Join Date": str(new_p_join)
+                    }])
+                    st.session_state.roster_df = pd.concat([st.session_state.roster_df, new_row], ignore_index=True)
+                    save_roster()
+                    st.success(f"Successfully added **{new_p_name.strip()}** joining on {new_p_join}!")
+                    st.rerun()
+
+    st.markdown("---")
+    st.markdown("### Existing Roster Profiles")
     
     roster_df = st.session_state.roster_df.copy()
     sorted_roster = roster_df.sort_values(by="Player Name", key=lambda col: col.str.lower()).reset_index(drop=True)
@@ -464,7 +733,8 @@ elif page == "✏️ Edit Roster":
     
     for idx, row in sorted_roster.iterrows():
         p_name = row["Player Name"]
-        with st.expander(f"🛡️ {p_name} — Rank: {row.get('Alliance Rank', 'Member')} | Status: {row.get('Status', 'Active')}"):
+        p_join = row.get("Join Date", today_str)
+        with st.expander(f"🛡️ {p_name} — Rank: {row.get('Alliance Rank', 'Member')} | Status: {row.get('Status', 'Active')} | Joined: {p_join}"):
             c1, c2, c3 = st.columns(3)
             
             new_name = c1.text_input("Player Name", value=p_name, key=f"edit_name_{idx}")
@@ -475,9 +745,9 @@ elif page == "✏️ Edit Roster":
             
             curr_status = row.get("Status", "Active")
             status_idx = STATUS_OPTIONS.index(curr_status) if curr_status in STATUS_OPTIONS else 0
-            new_status = c3.selectbox("Member Status", STATUS_OPTIONS, index=status_idx, key=f"edit_status_{idx}", help="Set to Inactive to exclude from ongoing attendance calculations following a castle takeover or name change.")
+            new_status = c3.selectbox("Member Status", STATUS_OPTIONS, index=status_idx, key=f"edit_status_{idx}", help="Set to Inactive to retire member and freeze stats.")
             
-            c4, c5, c6 = st.columns(3)
+            c4, c5, c6, c7 = st.columns(4)
             
             curr_castle = str(row.get("Castle Level", "40"))
             castle_idx = CASTLE_LEVEL_OPTIONS.index(curr_castle) if curr_castle in CASTLE_LEVEL_OPTIONS else 0
@@ -491,13 +761,20 @@ elif page == "✏️ Edit Roster":
             mil_idx = MILITARY_RANK_OPTIONS.index(curr_mil) if curr_mil in MILITARY_RANK_OPTIONS else 0
             new_mil = c6.selectbox("Military Rank", MILITARY_RANK_OPTIONS, index=mil_idx, key=f"edit_mil_{idx}")
             
+            try:
+                parsed_join = datetime.strptime(str(p_join), "%Y-%m-%d").date()
+            except Exception:
+                parsed_join = date.today()
+            new_join = c7.date_input("Join Date", parsed_join, key=f"edit_join_{idx}")
+            
             edited_roster_data.append({
                 "Player Name": new_name.strip(),
                 "Castle Level": new_castle,
                 "Lord Level": new_lord,
                 "Military Rank": new_mil,
                 "Alliance Rank": new_rank,
-                "Status": new_status
+                "Status": new_status,
+                "Join Date": str(new_join)
             })
             
     st.markdown("---")
@@ -512,7 +789,7 @@ elif page == "✏️ Edit Roster":
 # ---------------------------------------------------------
 elif page == "📁 Upload Roster CSV":
     st.subheader("📁 Simple Roster Import")
-    st.markdown("Upload a CSV file containing columns: `Player Name`, `Castle Level`, `Lord Level`, `Military Rank`, `Alliance Rank`, `Status`.")
+    st.markdown("Upload a CSV file containing columns: `Player Name`, `Castle Level`, `Lord Level`, `Military Rank`, `Alliance Rank`, `Status`, `Join Date`.")
     
     uploaded_file = st.file_uploader("Choose CSV file", type=["csv"])
     
@@ -525,12 +802,11 @@ elif page == "📁 Upload Roster CSV":
             if st.button("Confirm & Overwrite Roster", type="primary"):
                 uploaded_df.columns = [c.strip() for c in uploaded_df.columns]
                 
-                # Ensure all columns exist
-                for col, default_val in [("Castle Level", "40"), ("Lord Level", "50"), ("Military Rank", ""), ("Alliance Rank", "Member"), ("Status", "Active")]:
+                for col, default_val in [("Castle Level", "40"), ("Lord Level", "50"), ("Military Rank", ""), ("Alliance Rank", "Member"), ("Status", "Active"), ("Join Date", today_str)]:
                     if col not in uploaded_df.columns:
                         uploaded_df[col] = default_val
                 
-                st.session_state.roster_df = uploaded_df[["Player Name", "Castle Level", "Lord Level", "Military Rank", "Alliance Rank", "Status"]]
+                st.session_state.roster_df = uploaded_df[["Player Name", "Castle Level", "Lord Level", "Military Rank", "Alliance Rank", "Status", "Join Date"]]
                 save_roster()
                 st.success("Roster successfully replaced and saved!")
         except Exception as e:
