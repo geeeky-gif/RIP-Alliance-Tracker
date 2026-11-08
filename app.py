@@ -6,106 +6,131 @@ from datetime import datetime
 st.set_page_config(page_title="RIP Alliance Command Center", layout="wide")
 
 # ---------------------------------------------------------
-# MODERN, ELEGANT & BRIGHT THEME (CLEAN LIGHT MODE)
+# HIGH-PERFORMANCE ANALYTICS COMMAND THEME (DARK GLOW & GLASSMORPHISM)
 # ---------------------------------------------------------
 st.markdown(
     """
     <style>
-        /* Main background & global text */
+        /* Base Dark Executive & Analytics Dashboard Background */
         .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
-            background-color: #f8fafc !important;
-            color: #1e293b !important;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #080b11 !important;
+            color: #f1f5f9 !important;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
         
-        /* Sidebar styling */
+        /* Modern Glass Sidebar */
         [data-testid="stSidebar"] {
-            background-color: #ffffff !important;
-            border-right: 1px solid #e2e8f0;
+            background-color: #0c1017 !important;
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
         }
         [data-testid="stSidebar"] .stRadio label {
-            color: #334155 !important;
+            color: #94a3b8 !important;
             font-weight: 500;
         }
 
-        /* Header card */
-        .command-header {
-            background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
-            border: 1px solid #cbd5e1;
-            border-radius: 12px;
-            padding: 24px;
-            text-align: center;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-            margin-bottom: 25px;
+        /* Hero Command Header */
+        .command-hero {
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.8) 100%);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 14px;
+            padding: 24px 28px;
+            box-shadow: 0 10px 30px -10px rgba(99, 102, 241, 0.2);
+            backdrop-filter: blur(10px);
+            margin-bottom: 24px;
         }
-        .command-header h1 {
-            color: #0f172a !important;
+        .command-hero h1 {
+            color: #ffffff !important;
             margin: 0;
-            font-size: 28px;
+            font-size: 26px;
+            font-weight: 800;
             letter-spacing: -0.5px;
-            font-weight: 700;
+            background: linear-gradient(90deg, #ffffff 30%, #818cf8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
-        .command-header p {
-            color: #64748b !important;
+        .command-hero p {
+            color: #94a3b8 !important;
             margin: 6px 0 0 0;
-            font-size: 15px;
+            font-size: 14px;
         }
 
-        /* Metrics cards */
+        /* Glassmorphism Metric Cards */
         [data-testid="stMetric"] {
-            background-color: #ffffff !important;
-            border: 1px solid #e2e8f0 !important;
-            padding: 16px !important;
-            border-radius: 10px !important;
-            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05) !important;
+            background: rgba(15, 23, 42, 0.6) !important;
+            border: 1px solid rgba(255, 255, 255, 0.07) !important;
+            padding: 16px 20px !important;
+            border-radius: 12px !important;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2) !important;
+            backdrop-filter: blur(8px);
         }
         [data-testid="stMetricLabel"] {
-            color: #64748b !important;
-            font-size: 13px !important;
-            font-weight: 500;
+            color: #94a3b8 !important;
+            font-size: 12px !important;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
         }
         [data-testid="stMetricValue"] {
-            color: #0f172a !important;
+            color: #38bdf8 !important;
             font-size: 24px !important;
             font-weight: 700;
         }
 
-        /* Dataframe tables */
+        /* Tables & DataFrames */
         [data-testid="stDataFrame"] {
-            background-color: #ffffff !important;
-            border-radius: 10px;
-            border: 1px solid #e2e8f0;
-            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.02);
+            background-color: rgba(15, 23, 42, 0.4) !important;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.07);
         }
 
-        /* Buttons */
+        /* Professional Accent Buttons */
         .stButton button {
-            background-color: #ffffff;
-            color: #334155;
-            border: 1px solid #cbd5e1;
+            background: rgba(30, 41, 59, 0.7);
+            color: #f1f5f9;
+            border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 8px;
             font-weight: 600;
-            transition: all 0.2s ease;
+            transition: all 0.25s ease;
         }
         .stButton button:hover {
-            background-color: #f1f5f9;
-            color: #0f172a;
-            border-color: #94a3b8;
+            background: rgba(51, 65, 85, 0.9);
+            border-color: #38bdf8;
+            color: #ffffff;
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.3);
         }
         
-        /* Primary buttons */
         button[kind="primary"] {
-            background-color: #2563eb !important;
+            background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%) !important;
             color: #ffffff !important;
             border: none !important;
+            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
         }
         button[kind="primary"]:hover {
-            background-color: #1d4ed8 !important;
+            background: linear-gradient(135deg, #0369a1 0%, #1d4ed8 100%) !important;
+            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.6);
+        }
+
+        /* Tabs styling */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 8px;
+            background-color: rgba(15, 23, 42, 0.5);
+            padding: 6px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .stTabs [data-baseweb="tab"] {
+            color: #94a3b8;
+            border-radius: 6px;
+            font-weight: 600;
+        }
+        .stTabs [aria-selected="true"] {
+            background: #2563eb !important;
+            color: white !important;
         }
     </style>
-    <div class="command-header">
-        <h1>🛡️ RIP ALLIANCE COMMAND CENTER</h1>
-        <p>Operational Command & Master Matrix Tracking</p>
+    <div class="command-hero">
+        <h1>RIP ALLIANCE COMMAND CENTER</h1>
+        <p>Operational Intelligence & Member Analytics Hub</p>
     </div>
     """,
     unsafe_allow_html=True
@@ -163,9 +188,9 @@ def save_attendance():
 # ---------------------------------------------------------
 # SIDEBAR NAVIGATION
 # ---------------------------------------------------------
-st.sidebar.markdown("### 📌 Navigation Menu")
+st.sidebar.markdown("### 📊 NAVIGATION")
 page = st.sidebar.radio("Select View:", [
-    "📊 Attendance Dashboard",
+    "📈 Analytics Dashboard",
     "📝 Quick Log / Edit Sessions",
     "✏️ Edit Roster",
     "📁 Upload Roster CSV",
@@ -173,10 +198,10 @@ page = st.sidebar.radio("Select View:", [
 ])
 
 # ---------------------------------------------------------
-# PAGE 1: ATTENDANCE DASHBOARD
+# PAGE 1: ANALYTICS DASHBOARD
 # ---------------------------------------------------------
-if page == "📊 Attendance Dashboard":
-    st.subheader("📊 Master Alliance Attendance Overview")
+if page == "📈 Analytics Dashboard":
+    st.subheader("📈 Alliance Intelligence & Attendance Analytics")
     
     roster_df = st.session_state.roster_df
     att_df = st.session_state.attendance_df
@@ -201,20 +226,45 @@ if page == "📊 Attendance Dashboard":
                 "Player Name": p_name,
                 "Castle Level": p_row.get("Castle Level", "—"),
                 "Alliance Rank": p_row.get("Alliance Rank", "—"),
-                "Attended": f"{attended_cnt} / {total_sessions}",
-                "Attendance %": f"{pct:.1f}%"
+                "Attended Sessions": attended_cnt,
+                "Total Sessions": total_sessions,
+                "Attendance Rate": round(pct, 1)
             })
             
         summary_df = pd.DataFrame(stats)
         
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total Roster Members", len(roster_df))
-        m2.metric("Total Tracked Sessions", total_sessions)
-        avg_att = summary_df["Attendance %"].str.rstrip('%').astype(float).mean() if not summary_df.empty else 0
-        m3.metric("Avg Alliance Attendance", f"{avg_att:.1f}%")
+        # Top KPI Metrics Row
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Active Roster", len(roster_df))
+        m2.metric("Tracked Events", total_sessions)
+        avg_att = summary_df["Attendance Rate"].mean() if not summary_df.empty else 0
+        m3.metric("Alliance Turnout", f"{avg_att:.1f}%")
+        low_count = len(summary_df[summary_df["Attendance Rate"] < 70]) if total_sessions > 0 else 0
+        m4.metric("Risk Members (<70%)", low_count, delta=f"-{low_count}" if low_count > 0 else "Optimal", delta_color="inverse")
         
         st.markdown("---")
-        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+        
+        # Visual Analytics Charts Row
+        if total_sessions > 0 and not att_df.empty:
+            c_chart1, c_chart2 = st.columns(2)
+            with c_chart1:
+                st.markdown("#### 📉 Turnout Distribution by Event Type")
+                event_turnout = att_df.groupby("Event")["Attended"].mean().reset_index()
+                event_turnout["Turnout %"] = (event_turnout["Attended"] * 100).round(1)
+                st.bar_chart(event_turnout.set_index("Event")["Turnout %"], color="#38bdf8")
+                
+            with c_chart2:
+                st.markdown("#### 🏆 Top Attendance Performers")
+                top_performers = summary_df.sort_values(by="Attendance Rate", ascending=False).head(10)
+                st.bar_chart(top_performers.set_index("Player Name")["Attendance Rate"], color="#818cf8")
+            st.markdown("---")
+
+        st.markdown("#### 📋 Complete Member Performance Matrix")
+        # Format display dataframe for cleaner reading
+        display_df = summary_df.copy()
+        display_df["Attended"] = display_df["Attended Sessions"].astype(str) + " / " + display_df["Total Sessions"].astype(str)
+        display_df["Attendance %"] = display_df["Attendance Rate"].astype(str) + "%"
+        st.dataframe(display_df[["Player Name", "Castle Level", "Alliance Rank", "Attended", "Attendance %"]], use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
 # PAGE 2: QUICK LOG / EDIT SESSIONS (10x10 GRID & EDIT HUB)
@@ -240,7 +290,7 @@ elif page == "📝 Quick Log / Edit Sessions":
             session_id = f"{event_date}_{selected_event}_{unique_suffix}"
             
             st.markdown("---")
-            st.markdown("### 📋 Member Attendance Grid (10 Columns)")
+            st.markdown("### 📋 Member Attendance Matrix (10 Columns)")
             st.info("Everyone starts checked as **Present**. Uncheck any member who missed this event.")
             
             grid_key = f"grid_new_{session_id}"
