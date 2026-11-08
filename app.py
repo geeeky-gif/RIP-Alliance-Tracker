@@ -36,7 +36,7 @@ st.markdown(
     </style>
     <div class="rip-header">
         <h1>🛡️ RIP Alliance Command Center</h1>
-        <p>Simplified Matrix & Roster Management</p>
+        <p>10x10 Matrix Grid & Direct Roster Manager</p>
     </div>
     """,
     unsafe_allow_html=True
@@ -64,11 +64,15 @@ if "roster_df" not in st.session_state:
         except Exception:
             st.session_state.roster_df = pd.DataFrame(columns=["Player Name", "Castle Level", "Alliance Rank"])
     else:
-        st.session_state.roster_df = pd.DataFrame({
-            "Player Name": ["•~SoulTaker~•", "Warbansteiger", "01*BAD*01"],
-            "Castle Level": ["40", "37", "38"],
-            "Alliance Rank": ["Alliance Leader", "Deputy", "Deputy"]
-        })
+        # Initial starter roster template
+        initial_roster = []
+        for i in range(1, 101):
+            initial_roster.append({
+                "Player Name": f"Player_{i}",
+                "Castle Level": "40" if i <= 10 else "35",
+                "Alliance Rank": "Leader" if i == 1 else ("Officer" if i <= 5 else "Member")
+            })
+        st.session_state.roster_df = pd.DataFrame(initial_roster)
         st.session_state.roster_df.to_csv(ROSTER_FILE, index=False)
 
 if "attendance_df" not in st.session_state:
@@ -91,26 +95,26 @@ def save_attendance():
 # ---------------------------------------------------------
 page = st.sidebar.radio("Navigation", [
     "📊 Attendance Dashboard",
-    "📝 Quick Log Session",
+    "📝 Quick Log Session (10x10 Grid)",
+    "✏️ Edit Roster",
     "📁 Upload Roster CSV",
     "⚙️ Data Management"
 ])
 
 # ---------------------------------------------------------
-# PAGE 1: ATTENDANCE DASHBOARD (THE MASTER GRID)
+# PAGE 1: ATTENDANCE DASHBOARD
 # ---------------------------------------------------------
 if page == "📊 Attendance Dashboard":
-    st.subheader("📊 Master Attendance Grid")
+    st.subheader("📊 Master Attendance Overview")
     
     roster_df = st.session_state.roster_df
     att_df = st.session_state.attendance_df
     
     if roster_df.empty:
-        st.warning("No players found in roster. Upload a CSV or add players to start.")
+        st.warning("No players found in roster.")
     else:
         total_sessions = att_df["Session ID"].nunique() if not att_df.empty else 0
         
-        # Calculate rates per player
         stats = []
         for _, p_row in roster_df.iterrows():
             p_name = p_row["Player Name"]
@@ -132,9 +136,8 @@ if page == "📊 Attendance Dashboard":
             
         summary_df = pd.DataFrame(stats)
         
-        # Display top metrics
         m1, m2, m3 = st.columns(3)
-        m1.metric("Total Roster", len(roster_df))
+        m1.metric("Total Roster Members", len(roster_df))
         m2.metric("Total Tracked Sessions", total_sessions)
         avg_att = summary_df["Attendance %"].str.rstrip('%').astype(float).mean() if not summary_df.empty else 0
         m3.metric("Avg Alliance Attendance", f"{avg_att:.1f}%")
@@ -143,54 +146,91 @@ if page == "📊 Attendance Dashboard":
         st.dataframe(summary_df, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# PAGE 2: QUICK LOG SESSION (HANDLES MULTIPLE SAME-DAY EVENTS)
+# PAGE 2: QUICK LOG SESSION (10x10 GRID VIEW)
 # ---------------------------------------------------------
-elif page == "📝 Quick Log Session":
-    st.subheader("📝 Record Event Attendance")
+elif page == "📝 Quick Log Session (10x10 Grid)":
+    st.subheader("📝 Record Event Attendance (10x10 Grid)")
     
-    roster = st.session_state.roster_df["Player Name"].tolist()
-    if not roster:
+    roster_df = st.session_state.roster_df
+    roster_names = sorted(roster_df["Player Name"].tolist())
+    
+    if not roster_names:
         st.error("Roster is empty. Please add players first.")
     else:
         col1, col2, col3 = st.columns(3)
-        selected_event = col1.selectbox("Event", EVENTS_LIST)
-        event_date = col2.date_input("Date", datetime.now())
+        selected_event = col1.selectbox("Event Type", EVENTS_LIST)
+        event_date = col2.date_input("Event Date", datetime.now())
         session_label = col3.text_input("Session Identifier (Optional)", placeholder="e.g., Run 1, Match 2")
         
-        # Build unique session key to support multiple events per day
         unique_suffix = session_label.strip() if session_label.strip() else datetime.now().strftime("%H%M%S")
         session_id = f"{event_date}_{selected_event}_{unique_suffix}"
         
         st.markdown("---")
-        st.markdown("### Select Absent Players")
-        st.info("Uncheck players who **missed** the event. Everyone checked will be marked Present.")
+        st.markdown("### 📋 Member Attendance Grid")
+        st.info("Everyone is checked **Present** by default. Uncheck any member who missed this event.")
         
-        # Multiselect for quick absence toggling
-        absent_players = st.multiselect("Select players who were ABSENT:", options=sorted(roster))
+        # Initialize session state tracking for checkboxes if not set
+        grid_key = f"grid_{session_id}"
+        if grid_key not in st.session_state:
+            st.session_state[grid_key] = {name: True for name in roster_names}
+            
+        # Render in a 10-column layout grid
+        cols_per_row = 10
+        attendance_states = {}
         
-        if st.button("💾 Save Event Session", type="primary"):
+        for i in range(0, len(roster_names), cols_per_row):
+            row_players = roster_names[i:i + cols_per_row]
+            row_cols = st.columns(len(row_players))
+            for idx, p_name in enumerate(row_players):
+                current_val = st.session_state[grid_key].get(p_name, True)
+                attendance_states[p_name] = row_cols[idx].checkbox(p_name, value=current_val, key=f"chk_{session_id}_{p_name}")
+        
+        st.markdown("---")
+        if st.button("💾 Save Event Session Matrix", type="primary"):
             new_records = []
-            for p in roster:
-                is_present = p not in absent_players
+            for p_name, attended_status in attendance_states.items():
                 new_records.append({
                     "Session ID": session_id,
                     "Event": selected_event,
                     "Date": str(event_date),
-                    "Player Name": p,
-                    "Attended": is_present
+                    "Player Name": p_name,
+                    "Attended": attended_status
                 })
             
             new_df = pd.DataFrame(new_records)
+            # Remove existing session records if overwriting
+            st.session_state.attendance_df = st.session_state.attendance_df[st.session_state.attendance_df["Session ID"] != session_id]
             st.session_state.attendance_df = pd.concat([st.session_state.attendance_df, new_df], ignore_index=True)
             save_attendance()
-            st.success(f"Logged {selected_event} ({event_date}) successfully! Session ID: `{session_id}`")
+            st.success(f"Successfully saved session **{selected_event}** on **{event_date}**! (ID: `{session_id}`)")
 
 # ---------------------------------------------------------
-# PAGE 3: UPLOAD ROSTER CSV
+# PAGE 3: EDIT ROSTER (DIRECT EDIT TABLE + TOGGLE)
+# ---------------------------------------------------------
+elif page == "✏️ Edit Roster":
+    st.subheader("✏️ Direct Roster Management")
+    st.markdown("Modify player names, castle levels, or ranks directly on the table below.")
+    
+    enable_editing = st.toggle("🔓 Enable Table Editing Mode", value=False)
+    
+    if enable_editing:
+        st.success("Editing mode active! Double click any cell in the table to modify names or stats, then click 'Save Roster Changes' below.")
+        edited_df = st.data_editor(st.session_state.roster_df, num_rows="dynamic", use_container_width=True, hide_index=True)
+        
+        if st.button("💾 Save Roster Changes", type="primary"):
+            st.session_state.roster_df = edited_df
+            save_roster()
+            st.success("Roster successfully updated and saved to disk!")
+    else:
+        st.info("Toggle the switch above to unlock table editing.")
+        st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
+
+# ---------------------------------------------------------
+# PAGE 4: UPLOAD ROSTER CSV
 # ---------------------------------------------------------
 elif page == "📁 Upload Roster CSV":
     st.subheader("📁 Simple Roster Import")
-    st.markdown("Upload a CSV with columns: `Player Name`, `Castle Level`, `Alliance Rank`.")
+    st.markdown("Upload a CSV file containing columns: `Player Name`, `Castle Level`, `Alliance Rank`.")
     
     uploaded_file = st.file_uploader("Choose CSV file", type=["csv"])
     
@@ -201,22 +241,19 @@ elif page == "📁 Upload Roster CSV":
             st.dataframe(uploaded_df.head(), use_container_width=True)
             
             if st.button("Confirm & Overwrite Roster"):
-                # Clean column headers
                 uploaded_df.columns = [c.strip() for c in uploaded_df.columns]
-                
-                # Ensure essential columns exist
                 for col in ["Player Name", "Castle Level", "Alliance Rank"]:
                     if col not in uploaded_df.columns:
                         uploaded_df[col] = "—"
                 
                 st.session_state.roster_df = uploaded_df[["Player Name", "Castle Level", "Alliance Rank"]]
                 save_roster()
-                st.success("Roster successfully updated and saved!")
+                st.success("Roster successfully replaced and saved!")
         except Exception as e:
             st.error(f"Error reading CSV file: {e}")
 
 # ---------------------------------------------------------
-# PAGE 4: DATA MANAGEMENT
+# PAGE 5: DATA MANAGEMENT
 # ---------------------------------------------------------
 elif page == "⚙️ Data Management":
     st.subheader("⚙️ Data Management & Exports")
@@ -245,4 +282,4 @@ elif page == "⚙️ Data Management":
         if st.button("🚨 Clear All Attendance Logs"):
             st.session_state.attendance_df = pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Attended"])
             save_attendance()
-            st.warning("Attendance records cleared!")
+            st.warning("All attendance records cleared!")
