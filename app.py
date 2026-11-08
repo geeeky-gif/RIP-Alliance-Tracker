@@ -11,14 +11,11 @@ st.set_page_config(page_title="RIP Alliance Command Center", layout="wide")
 st.markdown(
     """
     <style>
-        /* Base Dark Executive & Analytics Dashboard Background */
         .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
             background-color: #080b11 !important;
             color: #f1f5f9 !important;
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
-        
-        /* Modern Glass Sidebar */
         [data-testid="stSidebar"] {
             background-color: #0c1017 !important;
             border-right: 1px solid rgba(255, 255, 255, 0.08);
@@ -27,8 +24,6 @@ st.markdown(
             color: #94a3b8 !important;
             font-weight: 500;
         }
-
-        /* Hero Command Header */
         .command-hero {
             background: linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.8) 100%);
             border: 1px solid rgba(99, 102, 241, 0.3);
@@ -53,8 +48,6 @@ st.markdown(
             margin: 6px 0 0 0;
             font-size: 14px;
         }
-
-        /* Glassmorphism Metric Cards */
         [data-testid="stMetric"] {
             background: rgba(15, 23, 42, 0.6) !important;
             border: 1px solid rgba(255, 255, 255, 0.07) !important;
@@ -75,15 +68,11 @@ st.markdown(
             font-size: 24px !important;
             font-weight: 700;
         }
-
-        /* Tables & DataFrames */
         [data-testid="stDataFrame"] {
             background-color: rgba(15, 23, 42, 0.4) !important;
             border-radius: 12px;
             border: 1px solid rgba(255, 255, 255, 0.07);
         }
-
-        /* Professional Accent Buttons */
         .stButton button {
             background: rgba(30, 41, 59, 0.7);
             color: #f1f5f9;
@@ -98,7 +87,6 @@ st.markdown(
             color: #ffffff;
             box-shadow: 0 0 15px rgba(56, 189, 248, 0.3);
         }
-        
         button[kind="primary"] {
             background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%) !important;
             color: #ffffff !important;
@@ -109,8 +97,6 @@ st.markdown(
             background: linear-gradient(135deg, #0369a1 0%, #1d4ed8 100%) !important;
             box-shadow: 0 6px 20px rgba(37, 99, 235, 0.6);
         }
-
-        /* Tabs styling */
         .stTabs [data-baseweb="tab-list"] {
             gap: 8px;
             background-color: rgba(15, 23, 42, 0.5);
@@ -172,12 +158,16 @@ if "attendance_df" not in st.session_state:
     if os.path.exists(ATTENDANCE_FILE):
         try:
             st.session_state.attendance_df = pd.read_csv(ATTENDANCE_FILE)
-            if not st.session_state.attendance_df.empty and "Attended" in st.session_state.attendance_df.columns:
-                st.session_state.attendance_df["Attended"] = st.session_state.attendance_df["Attended"].astype(str).str.lower() == "true"
+            if not st.session_state.attendance_df.empty:
+                # Migrate older boolean column data to string status format if needed
+                if "Attended" in st.session_state.attendance_df.columns and "Status" not in st.session_state.attendance_df.columns:
+                    st.session_state.attendance_df["Status"] = st.session_state.attendance_df["Attended"].apply(
+                        lambda x: "Active" if str(x).lower() == "true" else "Absent"
+                    )
         except Exception:
-            st.session_state.attendance_df = pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Attended"])
+            st.session_state.attendance_df = pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Status"])
     else:
-        st.session_state.attendance_df = pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Attended"])
+        st.session_state.attendance_df = pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Status"])
 
 def save_roster():
     st.session_state.roster_df.to_csv(ROSTER_FILE, index=False)
@@ -216,19 +206,26 @@ if page == "📈 Analytics Dashboard":
             p_name = p_row["Player Name"]
             if total_sessions > 0 and not att_df.empty:
                 p_logs = att_df[att_df["Player Name"] == p_name]
-                attended_cnt = len(p_logs[p_logs["Attended"] == True])
-                pct = (attended_cnt / total_sessions) * 100
+                active_cnt = len(p_logs[p_logs["Status"] == "Active"])
+                zero_cnt = len(p_logs[p_logs["Status"] == "Zero Points"])
+                absent_cnt = len(p_logs[p_logs["Status"] == "Absent"])
+                
+                # Showed up = Active + Zero Points
+                showed_up_cnt = active_cnt + zero_cnt
+                attendance_rate = (showed_up_cnt / total_sessions) * 100
             else:
-                attended_cnt = 0
-                pct = 100.0 if total_sessions == 0 else 0.0
+                active_cnt, zero_cnt, absent_cnt = 0, 0, 0
+                showed_up_cnt = 0
+                attendance_rate = 100.0 if total_sessions == 0 else 0.0
                 
             stats.append({
                 "Player Name": p_name,
                 "Castle Level": p_row.get("Castle Level", "—"),
                 "Alliance Rank": p_row.get("Alliance Rank", "—"),
-                "Attended Sessions": attended_cnt,
+                "Active Count": active_cnt,
+                "Zero Points Count": zero_cnt,
                 "Total Sessions": total_sessions,
-                "Attendance Rate": round(pct, 1)
+                "Attendance Rate": round(attendance_rate, 1)
             })
             
         summary_df = pd.DataFrame(stats)
@@ -239,8 +236,8 @@ if page == "📈 Analytics Dashboard":
         m2.metric("Tracked Events", total_sessions)
         avg_att = summary_df["Attendance Rate"].mean() if not summary_df.empty else 0
         m3.metric("Alliance Turnout", f"{avg_att:.1f}%")
-        low_count = len(summary_df[summary_df["Attendance Rate"] < 70]) if total_sessions > 0 else 0
-        m4.metric("Risk Members (<70%)", low_count, delta=f"-{low_count}" if low_count > 0 else "Optimal", delta_color="inverse")
+        total_zero_pts = summary_df["Zero Points Count"].sum() if not summary_df.empty else 0
+        m4.metric("Zero-Point Instances", total_zero_pts, delta=f"-{total_zero_pts} inactive" if total_zero_pts > 0 else "Optimal", delta_color="inverse")
         
         st.markdown("---")
         
@@ -248,10 +245,9 @@ if page == "📈 Analytics Dashboard":
         if total_sessions > 0 and not att_df.empty:
             c_chart1, c_chart2 = st.columns(2)
             with c_chart1:
-                st.markdown("#### 📉 Turnout Distribution by Event Type")
-                event_turnout = att_df.groupby("Event")["Attended"].mean().reset_index()
-                event_turnout["Turnout %"] = (event_turnout["Attended"] * 100).round(1)
-                st.bar_chart(event_turnout.set_index("Event")["Turnout %"], color="#38bdf8")
+                st.markdown("#### 📉 Overall Status Breakdown")
+                status_counts = att_df["Status"].value_counts()
+                st.bar_chart(status_counts, color="#38bdf8")
                 
             with c_chart2:
                 st.markdown("#### 🏆 Top Attendance Performers")
@@ -260,14 +256,16 @@ if page == "📈 Analytics Dashboard":
             st.markdown("---")
 
         st.markdown("#### 📋 Complete Member Performance Matrix")
-        # Format display dataframe for cleaner reading
         display_df = summary_df.copy()
-        display_df["Attended"] = display_df["Attended Sessions"].astype(str) + " / " + display_df["Total Sessions"].astype(str)
+        display_df["Turnout"] = (display_df["Active Count"] + display_df["Zero Points Count"]).astype(str) + " / " + display_df["Total Sessions"].astype(str)
+        display_df["Active Part."] = display_df["Active Count"].astype(str)
+        display_df["Zero Points"] = display_df["Zero Points Count"].astype(str)
         display_df["Attendance %"] = display_df["Attendance Rate"].astype(str) + "%"
-        st.dataframe(display_df[["Player Name", "Castle Level", "Alliance Rank", "Attended", "Attendance %"]], use_container_width=True, hide_index=True)
+        
+        st.dataframe(display_df[["Player Name", "Castle Level", "Alliance Rank", "Turnout", "Active Part.", "Zero Points", "Attendance %"]], use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# PAGE 2: QUICK LOG / EDIT SESSIONS (10x10 GRID & EDIT HUB)
+# PAGE 2: QUICK LOG / EDIT SESSIONS
 # ---------------------------------------------------------
 elif page == "📝 Quick Log / Edit Sessions":
     st.subheader("📝 Event Session Management")
@@ -290,33 +288,36 @@ elif page == "📝 Quick Log / Edit Sessions":
             session_id = f"{event_date}_{selected_event}_{unique_suffix}"
             
             st.markdown("---")
-            st.markdown("### 📋 Member Attendance Matrix (10 Columns)")
-            st.info("Everyone starts checked as **Present**. Uncheck any member who missed this event.")
+            st.markdown("### 📋 Member Attendance Matrix")
+            st.info("Assign each player's status for this session: **Active** (participated), **Zero Points** (showed up, no points), or **Absent** (missed).")
             
             grid_key = f"grid_new_{session_id}"
             if grid_key not in st.session_state:
-                st.session_state[grid_key] = {name: True for name in roster_names}
+                st.session_state[grid_key] = {name: "Active" for name in roster_names}
                 
-            cols_per_row = 10
-            attendance_states = {}
-            
-            for i in range(0, len(roster_names), cols_per_row):
-                row_players = roster_names[i:i + cols_per_row]
-                row_cols = st.columns(len(row_players))
-                for idx, p_name in enumerate(row_players):
-                    current_val = st.session_state[grid_key].get(p_name, True)
-                    attendance_states[p_name] = row_cols[idx].checkbox(p_name, value=current_val, key=f"chk_new_{session_id}_{p_name}")
+            session_statuses = {}
+            for p_name in roster_names:
+                default_status = st.session_state[grid_key].get(p_name, "Active")
+                c_name, c_stat = st.columns([2, 3])
+                c_name.markdown(f"**{p_name}**")
+                session_statuses[p_name] = c_stat.selectbox(
+                    f"Status for {p_name}", 
+                    ["Active", "Zero Points", "Absent"], 
+                    index=["Active", "Zero Points", "Absent"].index(default_status),
+                    key=f"sel_new_{session_id}_{p_name}",
+                    label_visibility="collapsed"
+                )
             
             st.markdown("---")
             if st.button("💾 Save New Event Session", type="primary", use_container_width=True):
                 new_records = []
-                for p_name, attended_status in attendance_states.items():
+                for p_name, status_val in session_statuses.items():
                     new_records.append({
                         "Session ID": session_id,
                         "Event": selected_event,
                         "Date": str(event_date),
                         "Player Name": p_name,
-                        "Attended": attended_status
+                        "Status": status_val
                     })
                 
                 new_df = pd.DataFrame(new_records)
@@ -342,33 +343,39 @@ elif page == "📝 Quick Log / Edit Sessions":
                 target_session_id = selected_session_to_edit["Session ID"]
                 session_logs = att_df[att_df["Session ID"] == target_session_id]
                 
-                current_statuses = {row["Player Name"]: bool(row["Attended"]) for _, row in session_logs.iterrows()}
+                current_statuses = {row["Player Name"]: row["Status"] for _, row in session_logs.iterrows()}
                 
                 st.markdown(f"### Editing Session: **{selected_session_to_edit['Event']}** ({selected_session_to_edit['Date']})")
-                st.info("Adjust the attendance checkboxes below and click **Update Session Matrix** to save your changes.")
+                st.info("Update player statuses below and click **Update Session Matrix**.")
                 
-                cols_per_row = 10
-                updated_states = {}
-                
-                for i in range(0, len(roster_names), cols_per_row):
-                    row_players = roster_names[i:i + cols_per_row]
-                    row_cols = st.columns(len(row_players))
-                    for idx, p_name in enumerate(row_players):
-                        default_val = current_statuses.get(p_name, True)
-                        updated_states[p_name] = row_cols[idx].checkbox(p_name, value=default_val, key=f"chk_edit_{target_session_id}_{p_name}")
+                updated_statuses = {}
+                for p_name in roster_names:
+                    default_stat = current_statuses.get(p_name, "Active")
+                    if default_stat not in ["Active", "Zero Points", "Absent"]:
+                        default_stat = "Active"
+                    
+                    c_name, c_stat = st.columns([2, 3])
+                    c_name.markdown(f"**{p_name}**")
+                    updated_statuses[p_name] = c_stat.selectbox(
+                        f"Edit Status {p_name}",
+                        ["Active", "Zero Points", "Absent"],
+                        index=["Active", "Zero Points", "Absent"].index(default_stat),
+                        key=f"sel_edit_{target_session_id}_{p_name}",
+                        label_visibility="collapsed"
+                    )
                 
                 st.markdown("---")
                 col_save, col_del = st.columns([2, 1])
                 
                 if col_save.button("💾 Update Session Matrix", type="primary", use_container_width=True):
                     updated_records = []
-                    for p_name, attended_status in updated_states.items():
+                    for p_name, status_val in updated_statuses.items():
                         updated_records.append({
                             "Session ID": target_session_id,
                             "Event": selected_session_to_edit["Event"],
                             "Date": selected_session_to_edit["Date"],
                             "Player Name": p_name,
-                            "Attended": attended_status
+                            "Status": status_val
                         })
                     
                     st.session_state.attendance_df = st.session_state.attendance_df[st.session_state.attendance_df["Session ID"] != target_session_id]
@@ -459,6 +466,6 @@ elif page == "⚙️ Data Management":
     with c2:
         st.markdown("### Reset Data")
         if st.button("🚨 Clear All Attendance Logs"):
-            st.session_state.attendance_df = pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Attended"])
+            st.session_state.attendance_df = pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Status"])
             save_attendance()
             st.warning("All attendance records cleared!")
