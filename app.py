@@ -407,38 +407,4 @@ elif page == "📝 Quick Log / Edit Sessions":
                 st.info("Modify statuses in the table below and click **Update Session Matrix**.")
                 
                 edit_grid_data = []
-                session_players = sorted(session_logs["Player Name"].dropna().unique().tolist(), key=lambda x: x.lower())
-                
-                for p_name in session_players:
-                    stat = current_statuses.get(p_name, "Active")
-                    if stat not in ["Active", "Zero Points", "Absent"]:
-                        stat = "Active"
-                    edit_grid_data.append({"Player Name": p_name, "Status": stat})
-                
-                edit_session_df = pd.DataFrame(edit_grid_data)
-                
-                updated_session_df = st.data_editor(
-                    edit_session_df,
-                    column_config={
-                        "Player Name": st.column_config.TextColumn("Player Name", disabled=True),
-                        "Status": st.column_config.SelectboxColumn(
-                            "Attendance Status",
-                            options=["Active", "Zero Points", "Absent"],
-                            required=True
-                        )
-                    },
-                    hide_index=True,
-                    use_container_width=True,
-                    key=f"editor_edit_{target_session_id}"
-                )
-                
-                st.markdown("---")
-                col_save, col_del = st.columns([2, 1])
-                
-                if col_save.button("💾 Update Session Matrix", type="primary", use_container_width=True):
-                    updated_records = []
-                    for _, row in updated_session_df.iterrows():
-                        updated_records.append({
-                            "Session ID": target_session_id,
-                            "Event": selected_session_to_edit["Event"],
-                            "Date
+                session_players = sorted(session_logs["Player Name"].dropna().unique().tolist(),
