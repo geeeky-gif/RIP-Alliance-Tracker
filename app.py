@@ -113,6 +113,22 @@ st.markdown(
             background: #2563eb !important;
             color: white !important;
         }
+        /* Custom card wrapper for each player in the grid to make it pop and legible */
+        .player-card {
+            background: rgba(30, 41, 59, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        .player-name {
+            color: #38bdf8 !important;
+            font-weight: 700;
+            font-size: 15px;
+            margin-bottom: 6px;
+            letter-spacing: 0.3px;
+        }
     </style>
     <div class="command-hero">
         <h1>RIP ALLIANCE COMMAND CENTER</h1>
@@ -147,7 +163,7 @@ if "roster_df" not in st.session_state:
         initial_roster = []
         for i in range(1, 101):
             initial_roster.append({
-                "Player Name": f"Player_{i}",
+                "Player Name": f"Player_{i:03d}",
                 "Castle Level": "40" if i <= 10 else "35",
                 "Alliance Rank": "Leader" if i == 1 else ("Officer" if i <= 5 else "Member")
             })
@@ -173,6 +189,13 @@ def save_roster():
 
 def save_attendance():
     st.session_state.attendance_df.to_csv(ATTENDANCE_FILE, index=False)
+
+# Helper function to sort roster names cleanly case-insensitively
+def get_sorted_roster_names():
+    if "roster_df" in st.session_state and not st.session_state.roster_df.empty:
+        names = st.session_state.roster_df["Player Name"].dropna().astype(str).tolist()
+        return sorted(names, key=lambda x: x.lower())
+    return []
 
 # ---------------------------------------------------------
 # SIDEBAR NAVIGATION
@@ -261,15 +284,14 @@ if page == "📈 Analytics Dashboard":
         st.dataframe(display_df[["Player Name", "Castle Level", "Alliance Rank", "Turnout", "Active Part.", "Zero Points", "Attendance %"]], use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# PAGE 2: QUICK LOG / EDIT SESSIONS (COMPACT 10x10 GRID VIEW)
+# PAGE 2: QUICK LOG / EDIT SESSIONS (ALPHABETICAL, CARD-STYLED GRID)
 # ---------------------------------------------------------
 elif page == "📝 Quick Log / Edit Sessions":
     st.subheader("📝 Event Session Management")
     
     tab_new, tab_edit = st.tabs(["➕ Log New Session", "✏️ Edit Existing Session"])
     
-    roster_df = st.session_state.roster_df
-    roster_names = sorted(roster_df["Player Name"].tolist())
+    roster_names = get_sorted_roster_names()
     
     with tab_new:
         if not roster_names:
@@ -284,14 +306,14 @@ elif page == "📝 Quick Log / Edit Sessions":
             session_id = f"{event_date}_{selected_event}_{unique_suffix}"
             
             st.markdown("---")
-            st.markdown("### 📋 Member Attendance Grid (10x10 Compact View)")
-            st.info("Default status is **Active**. Toggle buttons to switch members to **Zero Points** or **Absent**.")
+            st.markdown("### 📋 Alphabetical Member Attendance Matrix")
+            st.info("Names are sorted alphabetically. Default status is **Active**. Toggle buttons to switch members to **Zero Points** or **Absent**.")
             
             grid_key = f"grid_new_{session_id}"
             if grid_key not in st.session_state:
                 st.session_state[grid_key] = {name: "Active" for name in roster_names}
                 
-            cols_per_row = 5  # 5 columns wide to fit compact status controls cleanly on one screen
+            cols_per_row = 4  # 4 columns wide for spacious, highly legible player cards
             session_statuses = {}
             
             for i in range(0, len(roster_names), cols_per_row):
@@ -300,7 +322,15 @@ elif page == "📝 Quick Log / Edit Sessions":
                 for idx, p_name in enumerate(row_players):
                     current_val = st.session_state[grid_key].get(p_name, "Active")
                     with row_cols[idx]:
-                        st.markdown(f"**{p_name}**")
+                        # Styled container card for high readability and clear visual separation
+                        st.markdown(
+                            f"""
+                            <div class="player-card">
+                                <div class="player-name">🛡️ {p_name}</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
                         session_statuses[p_name] = st.radio(
                             f"Status {p_name}",
                             ["Active", "Zero Points", "Absent"],
@@ -309,7 +339,7 @@ elif page == "📝 Quick Log / Edit Sessions":
                             horizontal=True,
                             label_visibility="collapsed"
                         )
-                st.markdown("") # Spacing between rows
+                st.markdown("")
             
             st.markdown("---")
             if st.button("💾 Save New Event Session", type="primary", use_container_width=True):
@@ -348,105 +378,4 @@ elif page == "📝 Quick Log / Edit Sessions":
                 
                 current_statuses = {row["Player Name"]: row["Status"] for _, row in session_logs.iterrows()}
                 
-                st.markdown(f"### Editing Session: **{selected_session_to_edit['Event']}** ({selected_session_to_edit['Date']})")
-                st.info("Update player statuses in the grid below and click **Update Session Matrix**.")
-                
-                cols_per_row = 5
-                updated_statuses = {}
-                
-                for i in range(0, len(roster_names), cols_per_row):
-                    row_players = roster_names[i:i + cols_per_row]
-                    row_cols = st.columns(len(row_players))
-                    for idx, p_name in enumerate(row_players):
-                        default_stat = current_statuses.get(p_name, "Active")
-                        if default_stat not in ["Active", "Zero Points", "Absent"]:
-                            default_stat = "Active"
-                        
-                        with row_cols[idx]:
-                            st.markdown(f"**{p_name}**")
-                            updated_statuses[p_name] = st.radio(
-                                f"Edit Status {p_name}",
-                                ["Active", "Zero Points", "Absent"],
-                                index=["Active", "Zero Points", "Absent"].index(default_stat),
-                                key=f"radio_edit_{target_session_id}_{p_name}",
-                                horizontal=True,
-                                label_visibility="collapsed"
-                            )
-                    st.markdown("")
-                
-                st.markdown("---")
-                col_save, col_del = st.columns([2, 1])
-                
-                if col_save.button("💾 Update Session Matrix", type="primary", use_container_width=True):
-                    updated_records = []
-                    for p_name, status_val in updated_statuses.items():
-                        updated_records.append({
-                            "Session ID": target_session_id,
-                            "Event": selected_session_to_edit["Event"],
-                            "Date": selected_session_to_edit["Date"],
-                            "Player Name": p_name,
-                            "Status": status_val
-                        })
-                    
-                    st.session_state.attendance_df = st.session_state.attendance_df[st.session_state.attendance_df["Session ID"] != target_session_id]
-                    updated_df = pd.DataFrame(updated_records)
-                    st.session_state.attendance_df = pd.concat([st.session_state.attendance_df, updated_df], ignore_index=True)
-                    save_attendance()
-                    st.success("Session successfully updated!")
-                    
-                if col_del.button("🗑️ Delete Entire Session", use_container_width=True):
-                    st.session_state.attendance_df = st.session_state.attendance_df[st.session_state.attendance_df["Session ID"] != target_session_id]
-                    save_attendance()
-                    st.warning("Session deleted permanently!")
-                    st.rerun()
-
-# ---------------------------------------------------------
-# PAGE 3: EDIT ROSTER
-# ---------------------------------------------------------
-elif page == "✏️ Edit Roster":
-    st.subheader("✏️ Direct Roster Management")
-    st.markdown("Modify player names, castle levels, or ranks directly on the interactive table.")
-    
-    enable_editing = st.toggle("🔓 Enable Table Editing Mode", value=False)
-    
-    if enable_editing:
-        st.success("Editing mode active! Double click any cell to edit details, then click 'Save Roster Changes' below.")
-        edited_df = st.data_editor(st.session_state.roster_df, num_rows="dynamic", use_container_width=True, hide_index=True)
-        
-        if st.button("💾 Save Roster Changes", type="primary"):
-            st.session_state.roster_df = edited_df
-            save_roster()
-            st.success("Roster updated successfully!")
-    else:
-        st.info("Toggle the switch above to unlock table editing.")
-        st.dataframe(st.session_state.roster_df, use_container_width=True, hide_index=True)
-
-# ---------------------------------------------------------
-# PAGE 4: UPLOAD ROSTER CSV
-# ---------------------------------------------------------
-elif page == "📁 Upload Roster CSV":
-    st.subheader("📁 Simple Roster Import")
-    st.markdown("Upload a CSV file containing columns: `Player Name`, `Castle Level`, `Alliance Rank`.")
-    
-    uploaded_file = st.file_uploader("Choose CSV file", type=["csv"])
-    
-    if uploaded_file is not None:
-        try:
-            uploaded_df = pd.read_csv(uploaded_file, dtype=str)
-            st.markdown("#### Preview Uploaded Data:")
-            st.dataframe(uploaded_df.head(), use_container_width=True)
-            
-            if st.button("Confirm & Overwrite Roster", type="primary"):
-                uploaded_df.columns = [c.strip() for c in uploaded_df.columns]
-                for col in ["Player Name", "Castle Level", "Alliance Rank"]:
-                    if col not in uploaded_df.columns:
-                        uploaded_df[col] = "—"
-                
-                st.session_state.roster_df = uploaded_df[["Player Name", "Castle Level", "Alliance Rank"]]
-                save_roster()
-                st.success("Roster successfully replaced and saved!")
-        except Exception as e:
-            st.error(f"Error reading CSV file: {e}")
-
-# ---------------------------------------------------------
-# PAGE
+                st.markdown(f"### Editing Session: **{selected_session_to_edit['Event']}** ({selected_session_
