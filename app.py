@@ -6,71 +6,101 @@ from datetime import datetime
 st.set_page_config(page_title="RIP Alliance Command Center", layout="wide")
 
 # ---------------------------------------------------------
-# PROFESSIONAL THEME & CSS (EXECUTIVE SLATE & GOLD)
+# MODERN, ELEGANT & BRIGHT THEME (CLEAN LIGHT MODE)
 # ---------------------------------------------------------
 st.markdown(
     """
     <style>
+        /* Main background & global text */
         .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
-            background-color: #12161f !important;
-            color: #e2e8f0 !important;
+            background-color: #f8fafc !important;
+            color: #1e293b !important;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         }
+        
+        /* Sidebar styling */
         [data-testid="stSidebar"] {
-            background-color: #0b0e14 !important;
-            border-right: 1px solid #1e2532;
+            background-color: #ffffff !important;
+            border-right: 1px solid #e2e8f0;
         }
+        [data-testid="stSidebar"] .stRadio label {
+            color: #334155 !important;
+            font-weight: 500;
+        }
+
+        /* Header card */
         .command-header {
-            background: linear-gradient(135deg, #1a2233 0%, #0f1520 100%);
-            border: 1px solid #d4af37;
-            border-radius: 10px;
-            padding: 20px;
+            background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 24px;
             text-align: center;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
             margin-bottom: 25px;
         }
         .command-header h1 {
-            color: #f3e5ab !important;
+            color: #0f172a !important;
             margin: 0;
-            font-size: 26px;
-            letter-spacing: 1.5px;
+            font-size: 28px;
+            letter-spacing: -0.5px;
             font-weight: 700;
         }
         .command-header p {
-            color: #94a3b8 !important;
+            color: #64748b !important;
             margin: 6px 0 0 0;
-            font-size: 14px;
+            font-size: 15px;
         }
+
+        /* Metrics cards */
         [data-testid="stMetric"] {
-            background-color: #1a2233 !important;
-            border: 1px solid #2a364d !important;
-            padding: 12px !important;
-            border-radius: 8px !important;
+            background-color: #ffffff !important;
+            border: 1px solid #e2e8f0 !important;
+            padding: 16px !important;
+            border-radius: 10px !important;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05) !important;
         }
         [data-testid="stMetricLabel"] {
-            color: #94a3b8 !important;
+            color: #64748b !important;
             font-size: 13px !important;
+            font-weight: 500;
         }
         [data-testid="stMetricValue"] {
-            color: #f3e5ab !important;
-            font-size: 20px !important;
+            color: #0f172a !important;
+            font-size: 24px !important;
+            font-weight: 700;
         }
+
+        /* Dataframe tables */
         [data-testid="stDataFrame"] {
-            background-color: #1a2233 !important;
-            border-radius: 8px;
-            border: 1px solid #2a364d;
+            background-color: #ffffff !important;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.02);
         }
+
+        /* Buttons */
         .stButton button {
-            background-color: #1e2532;
-            color: #f3e5ab;
-            border: 1px solid #d4af37;
-            border-radius: 6px;
+            background-color: #ffffff;
+            color: #334155;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
             font-weight: 600;
+            transition: all 0.2s ease;
         }
         .stButton button:hover {
-            background-color: #2a364d;
-            color: #ffffff;
-            border-color: #f3e5ab;
+            background-color: #f1f5f9;
+            color: #0f172a;
+            border-color: #94a3b8;
+        }
+        
+        /* Primary buttons */
+        button[kind="primary"] {
+            background-color: #2563eb !important;
+            color: #ffffff !important;
+            border: none !important;
+        }
+        button[kind="primary"]:hover {
+            background-color: #1d4ed8 !important;
         }
     </style>
     <div class="command-header">
@@ -117,7 +147,6 @@ if "attendance_df" not in st.session_state:
     if os.path.exists(ATTENDANCE_FILE):
         try:
             st.session_state.attendance_df = pd.read_csv(ATTENDANCE_FILE)
-            # Ensure boolean formatting
             if not st.session_state.attendance_df.empty and "Attended" in st.session_state.attendance_df.columns:
                 st.session_state.attendance_df["Attended"] = st.session_state.attendance_df["Attended"].astype(str).str.lower() == "true"
         except Exception:
@@ -229,7 +258,7 @@ elif page == "📝 Quick Log / Edit Sessions":
                     attendance_states[p_name] = row_cols[idx].checkbox(p_name, value=current_val, key=f"chk_new_{session_id}_{p_name}")
             
             st.markdown("---")
-            if st.button("💾 Save New Event Session", type="primary"):
+            if st.button("💾 Save New Event Session", type="primary", use_container_width=True):
                 new_records = []
                 for p_name, attended_status in attendance_states.items():
                     new_records.append({
@@ -263,13 +292,11 @@ elif page == "📝 Quick Log / Edit Sessions":
                 target_session_id = selected_session_to_edit["Session ID"]
                 session_logs = att_df[att_df["Session ID"] == target_session_id]
                 
-                # Build dictionary of current statuses
                 current_statuses = {row["Player Name"]: bool(row["Attended"]) for _, row in session_logs.iterrows()}
                 
                 st.markdown(f"### Editing Session: **{selected_session_to_edit['Event']}** ({selected_session_to_edit['Date']})")
-                st.info("Adjust the attendance checkboxes below and click **Update Session** to save your changes.")
+                st.info("Adjust the attendance checkboxes below and click **Update Session Matrix** to save your changes.")
                 
-                edit_grid_key = f"grid_edit_{target_session_id}"
                 cols_per_row = 10
                 updated_states = {}
                 
@@ -283,7 +310,7 @@ elif page == "📝 Quick Log / Edit Sessions":
                 st.markdown("---")
                 col_save, col_del = st.columns([2, 1])
                 
-                if col_save.button("💾 Update Session Matrix", type="primary"):
+                if col_save.button("💾 Update Session Matrix", type="primary", use_container_width=True):
                     updated_records = []
                     for p_name, attended_status in updated_states.items():
                         updated_records.append({
@@ -294,14 +321,13 @@ elif page == "📝 Quick Log / Edit Sessions":
                             "Attended": attended_status
                         })
                     
-                    # Remove old records for this session and append updated ones
                     st.session_state.attendance_df = st.session_state.attendance_df[st.session_state.attendance_df["Session ID"] != target_session_id]
                     updated_df = pd.DataFrame(updated_records)
                     st.session_state.attendance_df = pd.concat([st.session_state.attendance_df, updated_df], ignore_index=True)
                     save_attendance()
                     st.success("Session successfully updated!")
                     
-                if col_del.button("🗑️ Delete Entire Session", type="secondary"):
+                if col_del.button("🗑️ Delete Entire Session", use_container_width=True):
                     st.session_state.attendance_df = st.session_state.attendance_df[st.session_state.attendance_df["Session ID"] != target_session_id]
                     save_attendance()
                     st.warning("Session deleted permanently!")
@@ -343,7 +369,7 @@ elif page == "📁 Upload Roster CSV":
             st.markdown("#### Preview Uploaded Data:")
             st.dataframe(uploaded_df.head(), use_container_width=True)
             
-            if st.button("Confirm & Overwrite Roster"):
+            if st.button("Confirm & Overwrite Roster", type="primary"):
                 uploaded_df.columns = [c.strip() for c in uploaded_df.columns]
                 for col in ["Player Name", "Castle Level", "Alliance Rank"]:
                     if col not in uploaded_df.columns:
