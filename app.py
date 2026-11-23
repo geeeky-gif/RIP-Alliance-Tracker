@@ -207,10 +207,12 @@ def save_roster():
 def save_attendance():
     st.session_state.attendance_df.to_csv(ATTENDANCE_FILE, index=False)
 
-def get_sorted_roster_names():
+def get_sorted_roster_names(active_only=True):
     if "roster_df" in st.session_state and not st.session_state.roster_df.empty:
-        active_df = st.session_state.roster_df[st.session_state.roster_df["Status"] == "Active"]
-        names = active_df["Player Name"].dropna().astype(str).tolist()
+        df = st.session_state.roster_df
+        if active_only:
+            df = df[df["Status"] == "Active"]
+        names = df["Player Name"].dropna().astype(str).tolist()
         return sorted(names, key=lambda x: x.lower())
     return []
 
@@ -234,6 +236,30 @@ def add_member_to_roster(name, castle="35", lord="50", mil="", rank="Member", st
     st.session_state.roster_df = pd.concat([st.session_state.roster_df, new_row], ignore_index=True)
     save_roster()
     return True, f"Added **{clean_name}** to the roster!"
+
+def add_member_to_session(session_id, event_name, event_date, player_name, status_val):
+    clean_name = str(player_name).strip()
+    if not clean_name:
+        return False, "Player name cannot be empty."
+
+    att_df = st.session_state.attendance_df
+    existing_in_session = att_df[
+        (att_df["Session ID"] == session_id) &
+        (att_df["Player Name"].str.strip().str.lower() == clean_name.lower())
+    ]
+    if not existing_in_session.empty:
+        return False, f"**{clean_name}** is already in this session."
+
+    new_entry = pd.DataFrame([{
+        "Session ID": session_id,
+        "Event": event_name,
+        "Date": str(event_date),
+        "Player Name": clean_name,
+        "Status": status_val
+    }])
+    st.session_state.attendance_df = pd.concat([st.session_state.attendance_df, new_entry], ignore_index=True)
+    save_attendance()
+    return True, f"Added **{clean_name}** ({status_val}) to this session!"
 
 def normalize_attendance_df(df):
     cleaned = df.copy()
@@ -387,7 +413,6 @@ elif page == "📝 Quick Log / Edit Sessions":
         unique_suffix = session_label.strip() if session_label.strip() else "Default"
         session_id = f"{event_date}_{selected_event}_{unique_suffix}"
 
-        # Quick-Add Teammate inline without losing current session matrix edits
         with st.expander("➕ Spot a New Teammate? Quick-Add to Roster & Session"):
             with st.form("quick_add_session_member", clear_on_submit=True):
                 qa1, qa2, qa3, qa4 = st.columns([3, 1.5, 1.5, 2])
@@ -409,7 +434,7 @@ elif page == "📝 Quick Log / Edit Sessions":
                     else:
                         st.error(msg)
 
-        roster_names = get_sorted_roster_names()
+        roster_names = get_sorted_roster_names(active_only=True)
 
         if not roster_names:
             st.error("No active players found in roster. Add a teammate above or update statuses in the Roster Editor.")
@@ -418,7 +443,6 @@ elif page == "📝 Quick Log / Edit Sessions":
             st.markdown("### 📋 Active Members Attendance Matrix")
             st.info("Listing **Active** members alphabetically. Default status is **Active**.")
 
-            # Preserve any quick-added player status overrides
             initial_statuses = [
                 st.session_state.get(f"quick_status_{session_id}_{name}", "Active")
                 for name in roster_names
@@ -481,13 +505,76 @@ elif page == "📝 Quick Log / Edit Sessions":
                 session_logs = att_df[att_df["Session ID"] == target_session_id]
 
                 current_statuses = {row["Player Name"]: row["Status"] for _, row in session_logs.iterrows()}
+                session_players = sorted(session_logs["Player Name"].dropna().unique().tolist(), key=lambda x: x.lower())
+                session_players_lower = {p.strip().lower() for p in session_players}
 
                 st.markdown(f"### Editing Session: **{selected_session_to_edit['Event']}** ({selected_session_to_edit['Date']})")
+
+                # Add missing member to this existing session
+                with st.expander("➕ Add Missing Member to This Session"):
+                    all_roster_names = get_sorted_roster_names(active_only=False)
+                    missing_from_session = [n for n in all_roster_names if n.strip().lower() not in session_players_lower]
+
+                    add_tab_existing, add_tab_new = st.tabs(["From Existing Roster", "New Player (Add to Roster & Session)"])
+
+                    with add_tab_existing:
+                        if not missing_from_session:
+                            st.info("All current roster members are already included in this session.")
+                        else:
+                            with st.form(f"add_existing_to_session_{target_session_id}", clear_on_submit=True):
+                                ex1, ex2 = st.columns([3, 2])
+                                chosen_member = ex1.selectbox("Select Roster Member", missing_from_session)
+                                chosen_status = ex2.selectbox("Attendance Status", ATTENDANCE_STATUS_OPTIONS, index=0)
+
+                                if st.form_submit_button("Add Member to Session", type="primary"):
+                                    ok, msg = add_member_to_session(
+                                        session_id=target_session_id,
+                                        event_name=selected_session_to_edit["Event"],
+                                        event_date=selected_session_to_edit["Date"],
+                                        player_name=chosen_member,
+                                        status_val=chosen_status
+                                    )
+                                    if ok:
+                                        st.success(msg)
+                                        st.rerun()
+                                    else:
+                                        st.error(msg)
+
+                    with add_tab_new:
+                        with st.form(f"add_new_to_session_{target_session_id}", clear_on_submit=True):
+                            ns1, ns2, ns3, ns4 = st.columns([3, 1.5, 1.5, 2])
+                            ns_name = ns1.text_input("New Player Name", placeholder="Exact in-game name")
+                            ns_castle = ns2.selectbox("Castle Level", CASTLE_LEVEL_OPTIONS, index=34)
+                            ns_rank = ns3.selectbox("Alliance Rank", ALLIANCE_RANK_OPTIONS, index=4)
+                            ns_status = ns4.selectbox("Attendance Status", ATTENDANCE_STATUS_OPTIONS, index=0)
+
+                            if st.form_submit_button("Add to Roster & Session", type="primary"):
+                                clean_ns = ns_name.strip()
+                                ok_roster, msg_roster = add_member_to_roster(
+                                    name=clean_ns,
+                                    castle=ns_castle,
+                                    rank=ns_rank,
+                                    status="Active"
+                                )
+                                if ok_roster:
+                                    ok_sess, msg_sess = add_member_to_session(
+                                        session_id=target_session_id,
+                                        event_name=selected_session_to_edit["Event"],
+                                        event_date=selected_session_to_edit["Date"],
+                                        player_name=clean_ns,
+                                        status_val=ns_status
+                                    )
+                                    if ok_sess:
+                                        st.success(f"{msg_roster} {msg_sess}")
+                                        st.rerun()
+                                    else:
+                                        st.error(msg_sess)
+                                else:
+                                    st.error(msg_roster)
+
                 st.info("Modify statuses in the table below and click **Update Session Matrix**.")
 
                 edit_grid_data = []
-                session_players = sorted(session_logs["Player Name"].dropna().unique().tolist(), key=lambda x: x.lower())
-
                 for p_name in session_players:
                     stat = current_statuses.get(p_name, "Active")
                     if stat not in ATTENDANCE_STATUS_OPTIONS:
