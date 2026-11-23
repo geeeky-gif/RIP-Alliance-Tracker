@@ -183,7 +183,6 @@ if "roster_df" not in st.session_state:
         st.session_state.roster_df = pd.DataFrame(initial_roster)
         st.session_state.roster_df.to_csv(ROSTER_FILE, index=False)
 
-# Ensure all expected columns exist in roster
 for col, default_val in [("Castle Level", "40"), ("Lord Level", "50"), ("Military Rank", ""), ("Alliance Rank", "Member"), ("Status", "Active")]:
     if col not in st.session_state.roster_df.columns:
         st.session_state.roster_df[col] = default_val
@@ -214,6 +213,27 @@ def get_sorted_roster_names():
         names = active_df["Player Name"].dropna().astype(str).tolist()
         return sorted(names, key=lambda x: x.lower())
     return []
+
+def add_member_to_roster(name, castle="35", lord="50", mil="", rank="Member", status="Active"):
+    clean_name = str(name).strip()
+    if not clean_name:
+        return False, "Player name cannot be empty."
+
+    existing_names = st.session_state.roster_df["Player Name"].dropna().astype(str).str.strip().str.lower().tolist()
+    if clean_name.lower() in existing_names:
+        return False, f"**{clean_name}** is already on the roster."
+
+    new_row = pd.DataFrame([{
+        "Player Name": clean_name,
+        "Castle Level": str(castle),
+        "Lord Level": str(lord),
+        "Military Rank": str(mil),
+        "Alliance Rank": str(rank),
+        "Status": str(status)
+    }])
+    st.session_state.roster_df = pd.concat([st.session_state.roster_df, new_row], ignore_index=True)
+    save_roster()
+    return True, f"Added **{clean_name}** to the roster!"
 
 def normalize_attendance_df(df):
     cleaned = df.copy()
@@ -282,9 +302,6 @@ if page == "📈 Analytics Dashboard":
     if roster_df.empty:
         st.warning("No players found in roster.")
     else:
-        active_roster_df = roster_df[roster_df["Status"] == "Active"]
-        active_names = active_roster_df["Player Name"].tolist()
-
         total_sessions = att_df["Session ID"].nunique() if not att_df.empty else 0
 
         stats = []
@@ -361,27 +378,55 @@ elif page == "📝 Quick Log / Edit Sessions":
 
     tab_new, tab_edit = st.tabs(["➕ Log New Session", "✏️ Edit Existing Session"])
 
-    roster_names = get_sorted_roster_names()
-
     with tab_new:
+        col1, col2, col3 = st.columns(3)
+        selected_event = col1.selectbox("Event Type", EVENTS_LIST, key="new_ev")
+        event_date = col2.date_input("Event Date", datetime.now(), key="new_dt")
+        session_label = col3.text_input("Session Identifier (Optional)", placeholder="e.g., Run 1, Match 2", key="new_lbl")
+
+        unique_suffix = session_label.strip() if session_label.strip() else "Default"
+        session_id = f"{event_date}_{selected_event}_{unique_suffix}"
+
+        # Quick-Add Teammate inline without losing current session matrix edits
+        with st.expander("➕ Spot a New Teammate? Quick-Add to Roster & Session"):
+            with st.form("quick_add_session_member", clear_on_submit=True):
+                qa1, qa2, qa3, qa4 = st.columns([3, 1.5, 1.5, 2])
+                qa_name = qa1.text_input("New Player Name", placeholder="Exact in-game name")
+                qa_castle = qa2.selectbox("Castle Level", CASTLE_LEVEL_OPTIONS, index=34)
+                qa_rank = qa3.selectbox("Alliance Rank", ALLIANCE_RANK_OPTIONS, index=4)
+                qa_att_status = qa4.selectbox("Status for This Event", ATTENDANCE_STATUS_OPTIONS, index=0)
+
+                if st.form_submit_button("Add & Include in Session", type="primary"):
+                    ok, msg = add_member_to_roster(
+                        name=qa_name,
+                        castle=qa_castle,
+                        rank=qa_rank,
+                        status="Active"
+                    )
+                    if ok:
+                        st.session_state[f"quick_status_{session_id}_{qa_name.strip()}"] = qa_att_status
+                        st.success(f"{msg} Included below as **{qa_att_status}**.")
+                    else:
+                        st.error(msg)
+
+        roster_names = get_sorted_roster_names()
+
         if not roster_names:
-            st.error("No active players found in roster. Please update member statuses to 'Active' in the Roster Editor.")
+            st.error("No active players found in roster. Add a teammate above or update statuses in the Roster Editor.")
         else:
-            col1, col2, col3 = st.columns(3)
-            selected_event = col1.selectbox("Event Type", EVENTS_LIST, key="new_ev")
-            event_date = col2.date_input("Event Date", datetime.now(), key="new_dt")
-            session_label = col3.text_input("Session Identifier (Optional)", placeholder="e.g., Run 1, Match 2", key="new_lbl")
-
-            unique_suffix = session_label.strip() if session_label.strip() else datetime.now().strftime("%H%M%S")
-            session_id = f"{event_date}_{selected_event}_{unique_suffix}"
-
             st.markdown("---")
             st.markdown("### 📋 Active Members Attendance Matrix")
-            st.info("Listing **Active** members alphabetically. Default status is **Active**. Inactive members are excluded so their replacements start clean.")
+            st.info("Listing **Active** members alphabetically. Default status is **Active**.")
+
+            # Preserve any quick-added player status overrides
+            initial_statuses = [
+                st.session_state.get(f"quick_status_{session_id}_{name}", "Active")
+                for name in roster_names
+            ]
 
             session_grid_df = pd.DataFrame({
                 "Player Name": roster_names,
-                "Status": ["Active"] * len(roster_names)
+                "Status": initial_statuses
             })
 
             edited_session_df = st.data_editor(
@@ -401,10 +446,11 @@ elif page == "📝 Quick Log / Edit Sessions":
 
             st.markdown("---")
             if st.button("💾 Save New Event Session", type="primary", use_container_width=True):
+                final_session_id = session_id if session_label.strip() else f"{event_date}_{selected_event}_{datetime.now().strftime('%H%M%S')}"
                 new_records = []
                 for _, row in edited_session_df.iterrows():
                     new_records.append({
-                        "Session ID": session_id,
+                        "Session ID": final_session_id,
                         "Event": selected_event,
                         "Date": str(event_date),
                         "Player Name": row["Player Name"],
@@ -412,7 +458,7 @@ elif page == "📝 Quick Log / Edit Sessions":
                     })
 
                 new_df = pd.DataFrame(new_records)
-                st.session_state.attendance_df = st.session_state.attendance_df[st.session_state.attendance_df["Session ID"] != session_id]
+                st.session_state.attendance_df = st.session_state.attendance_df[st.session_state.attendance_df["Session ID"] != final_session_id]
                 st.session_state.attendance_df = pd.concat([st.session_state.attendance_df, new_df], ignore_index=True)
                 save_attendance()
                 st.success(f"Successfully recorded session **{selected_event}** on **{event_date}**!")
@@ -492,12 +538,40 @@ elif page == "📝 Quick Log / Edit Sessions":
                     st.rerun()
 
 # ---------------------------------------------------------
-# PAGE 3: EDIT ROSTER (DROPDOWN EDITOR & INACTIVE TOGGLE)
+# PAGE 3: EDIT ROSTER (ADD MEMBER + DROPDOWN EDITOR)
 # ---------------------------------------------------------
 elif page == "✏️ Edit Roster":
     st.subheader("✏️ Direct Roster Management")
-    st.markdown("Manage player profiles, update dropdown attributes, and set members as **Inactive** to freeze historical stats for castle takeovers and renames.")
+    st.markdown("Add new members, update dropdown attributes, or set departed members to **Inactive** to freeze their historical stats.")
 
+    with st.expander("➕ Add New Member to Roster", expanded=False):
+        with st.form("add_new_member_roster_form", clear_on_submit=True):
+            r1, r2, r3 = st.columns(3)
+            add_name = r1.text_input("Player Name", placeholder="Enter exact player name")
+            add_rank = r2.selectbox("Alliance Rank", ALLIANCE_RANK_OPTIONS, index=4)
+            add_status = r3.selectbox("Member Status", STATUS_OPTIONS, index=0)
+
+            r4, r5, r6 = st.columns(3)
+            add_castle = r4.selectbox("Castle Level", CASTLE_LEVEL_OPTIONS, index=34)
+            add_lord = r5.selectbox("Lord Level", LORD_LEVEL_OPTIONS, index=50)
+            add_mil = r6.selectbox("Military Rank", MILITARY_RANK_OPTIONS, index=0)
+
+            if st.form_submit_button("➕ Add Member", type="primary", use_container_width=True):
+                ok, msg = add_member_to_roster(
+                    name=add_name,
+                    castle=add_castle,
+                    lord=add_lord,
+                    mil=add_mil,
+                    rank=add_rank,
+                    status=add_status
+                )
+                if ok:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
+
+    st.markdown("---")
     roster_df = st.session_state.roster_df.copy()
     sorted_roster = roster_df.sort_values(by="Player Name", key=lambda col: col.str.lower()).reset_index(drop=True)
 
