@@ -795,4 +795,202 @@ elif page == "✏️ Edit Roster":
         else:
             merge_tab, purge_tab = st.tabs(["Merge Old Name -> Current Name", "Remove Name Completely"])
 
-            with merge_
+            with merge_tab:
+                with st.form("merge_duplicate_history_form"):
+                    old_avatar = st.selectbox("Old / Duplicate Avatar Name", all_known_names, key="merge_old")
+                    target_avatar = st.selectbox("Merge Into Current Roster Member", roster_names_all if roster_names_all else all_known_names, key="merge_new")
+                    remove_old_from_roster = st.checkbox("Also delete old avatar row from Roster", value=True)
+
+                    if st.form_submit_button("Merge Attendance History", type="primary", use_container_width=True):
+                        if old_avatar.strip().lower() == target_avatar.strip().lower():
+                            st.error("Select two different names to merge.")
+                        else:
+                            moved = migrate_attendance_names({old_avatar: target_avatar})
+                            if remove_old_from_roster:
+                                st.session_state.roster_df = st.session_state.roster_df[
+                                    st.session_state.roster_df["Player Name"].str.strip().str.lower() != old_avatar.strip().lower()
+                                ].reset_index(drop=True)
+                                save_roster()
+                            st.success(f"Merged **{moved}** attendance record(s) from **{old_avatar}** into **{target_avatar}**!")
+                            st.rerun()
+
+            with purge_tab:
+                with st.form("purge_phantom_member_form"):
+                    purge_target = st.selectbox("Select Name to Remove", all_known_names, key="purge_sel")
+                    purge_roster = st.checkbox("Remove from Roster", value=True)
+                    purge_att = st.checkbox("Remove from All Attendance Logs", value=True)
+
+                    if st.form_submit_button("Remove Selected Member", use_container_width=True):
+                        removed_att = purge_player_from_all_attendance(purge_target) if purge_att else 0
+                        if purge_roster:
+                            st.session_state.roster_df = st.session_state.roster_df[
+                                st.session_state.roster_df["Player Name"].str.strip().str.lower() != purge_target.strip().lower()
+                            ].reset_index(drop=True)
+                            save_roster()
+                        st.success(f"Removed **{purge_target}** ({removed_att} attendance record(s) cleared).")
+                        st.rerun()
+
+    st.markdown("---")
+    roster_df = st.session_state.roster_df.copy()
+    sorted_roster = roster_df.sort_values(by="Player Name", key=lambda col: col.str.lower()).reset_index(drop=True)
+
+    edited_roster_data = []
+    rename_mappings = {}
+
+    for idx, row in sorted_roster.iterrows():
+        p_name = row["Player Name"]
+        with st.expander(f"🛡️ {p_name} — Rank: {row.get('Alliance Rank', 'Member')} | Status: {row.get('Status', 'Active')}"):
+            c1, c2, c3 = st.columns(3)
+
+            new_name = c1.text_input("Player Name (renaming keeps all history)", value=p_name, key=f"edit_name_{idx}")
+
+            curr_rank = row.get("Alliance Rank", "Member")
+            rank_idx = ALLIANCE_RANK_OPTIONS.index(curr_rank) if curr_rank in ALLIANCE_RANK_OPTIONS else 4
+            new_rank = c2.selectbox("Alliance Rank", ALLIANCE_RANK_OPTIONS, index=rank_idx, key=f"edit_rank_{idx}")
+
+            curr_status = row.get("Status", "Active")
+            status_idx = STATUS_OPTIONS.index(curr_status) if curr_status in STATUS_OPTIONS else 0
+            new_status = c3.selectbox("Member Status", STATUS_OPTIONS, index=status_idx, key=f"edit_status_{idx}", help="Set to Inactive to exclude from future event sessions while preserving past records.")
+
+            c4, c5, c6 = st.columns(3)
+
+            curr_castle = str(row.get("Castle Level", "40"))
+            castle_idx = CASTLE_LEVEL_OPTIONS.index(curr_castle) if curr_castle in CASTLE_LEVEL_OPTIONS else 0
+            new_castle = c4.selectbox("Castle Level", CASTLE_LEVEL_OPTIONS, index=castle_idx, key=f"edit_castle_{idx}")
+
+            curr_lord = str(row.get("Lord Level", "50"))
+            lord_idx = LORD_LEVEL_OPTIONS.index(curr_lord) if curr_lord in LORD_LEVEL_OPTIONS else 0
+            new_lord = c5.selectbox("Lord Level", LORD_LEVEL_OPTIONS, index=lord_idx, key=f"edit_lord_{idx}")
+
+            curr_mil = str(row.get("Military Rank", ""))
+            mil_idx = MILITARY_RANK_OPTIONS.index(curr_mil) if curr_mil in MILITARY_RANK_OPTIONS else 0
+            new_mil = c6.selectbox("Military Rank", MILITARY_RANK_OPTIONS, index=mil_idx, key=f"edit_mil_{idx}")
+
+            clean_new_name = new_name.strip() if new_name.strip() else p_name
+            if clean_new_name != p_name:
+                rename_mappings[p_name] = clean_new_name
+
+            edited_roster_data.append({
+                "Player Name": clean_new_name,
+                "Castle Level": new_castle,
+                "Lord Level": new_lord,
+                "Military Rank": new_mil,
+                "Alliance Rank": new_rank,
+                "Status": new_status
+            })
+
+    st.markdown("---")
+    if st.button("💾 Save All Roster Changes", type="primary", use_container_width=True):
+        new_df = pd.DataFrame(edited_roster_data)
+        new_df["_norm"] = new_df["Player Name"].str.strip().str.lower()
+        new_df = new_df.drop_duplicates(subset=["_norm"], keep="last").drop(columns=["_norm"]).reset_index(drop=True)
+
+        st.session_state.roster_df = new_df
+        save_roster()
+
+        migrated_records = migrate_attendance_names(rename_mappings)
+        if migrated_records > 0:
+            st.success(f"Roster updated and migrated **{migrated_records}** historical attendance record(s) to the new name(s)!")
+        else:
+            st.success("Roster profiles updated successfully!")
+        st.rerun()
+
+# ---------------------------------------------------------
+# PAGE 4: UPLOAD ROSTER CSV
+# ---------------------------------------------------------
+elif page == "📁 Upload Roster CSV":
+    st.subheader("📁 Simple Roster Import")
+    st.markdown("Upload a CSV file containing columns: `Player Name`, `Castle Level`, `Lord Level`, `Military Rank`, `Alliance Rank`, `Status`.")
+
+    uploaded_file = st.file_uploader("Choose CSV file", type=["csv"], key="roster_csv_uploader")
+
+    if uploaded_file is not None:
+        try:
+            uploaded_df = pd.read_csv(uploaded_file, dtype=str)
+            st.markdown("#### Preview Uploaded Data:")
+            st.dataframe(uploaded_df.head(), use_container_width=True)
+
+            if st.button("Confirm & Overwrite Roster", type="primary"):
+                uploaded_df.columns = [c.strip() for c in uploaded_df.columns]
+
+                for col, default_val in [("Castle Level", "40"), ("Lord Level", "50"), ("Military Rank", ""), ("Alliance Rank", "Member"), ("Status", "Active")]:
+                    if col not in uploaded_df.columns:
+                        uploaded_df[col] = default_val
+
+                st.session_state.roster_df = uploaded_df[["Player Name", "Castle Level", "Lord Level", "Military Rank", "Alliance Rank", "Status"]]
+                save_roster()
+                st.success("Roster successfully replaced and saved!")
+        except Exception as e:
+            st.error(f"Error reading CSV file: {e}")
+
+# ---------------------------------------------------------
+# PAGE 5: UPLOAD ATTENDANCE CSV
+# ---------------------------------------------------------
+elif page == "📁 Upload Attendance CSV":
+    st.subheader("📁 Attendance Records Import")
+    st.markdown("Upload an attendance CSV file containing `Session ID`, `Event`, `Date`, `Player Name`, and `Status` (`Active`, `Zero Points`, or `Absent`).")
+
+    uploaded_att_file = st.file_uploader("Choose Attendance CSV file", type=["csv"], key="attendance_csv_uploader")
+
+    if uploaded_att_file is not None:
+        try:
+            raw_att_df = pd.read_csv(uploaded_att_file, dtype=str)
+            normalized_df = normalize_attendance_df(raw_att_df)
+
+            if normalized_df.empty:
+                st.warning("No valid attendance rows with a `Player Name` were found in the uploaded file.")
+            else:
+                st.markdown("#### Preview Normalized Attendance Records:")
+                st.dataframe(normalized_df.head(15), use_container_width=True, hide_index=True)
+
+                import_mode = st.radio(
+                    "Import Mode:",
+                    ["Merge / Update matching Session IDs", "Overwrite All Attendance Logs"],
+                    horizontal=True
+                )
+
+                if st.button("Confirm Attendance Import", type="primary"):
+                    if import_mode == "Overwrite All Attendance Logs":
+                        st.session_state.attendance_df = normalized_df
+                    else:
+                        existing_df = normalize_attendance_df(st.session_state.attendance_df) if not st.session_state.attendance_df.empty else pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Status"])
+                        imported_session_ids = normalized_df["Session ID"].unique().tolist()
+                        filtered_existing = existing_df[~existing_df["Session ID"].isin(imported_session_ids)]
+                        st.session_state.attendance_df = pd.concat([filtered_existing, normalized_df], ignore_index=True)
+
+                    save_attendance()
+                    st.success(f"Successfully imported **{len(normalized_df)}** attendance records across **{normalized_df['Session ID'].nunique()}** session(s)!")
+        except Exception as e:
+            st.error(f"Error reading attendance CSV file: {e}")
+
+# ---------------------------------------------------------
+# PAGE 6: DATA MANAGEMENT
+# ---------------------------------------------------------
+elif page == "⚙️ Data Management":
+    st.subheader("⚙️ Data Management & Exports")
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+        st.markdown("### Export Data")
+        st.download_button(
+            "📥 Download Roster CSV",
+            data=st.session_state.roster_df.to_csv(index=False).encode("utf-8"),
+            file_name="roster_data.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+        st.download_button(
+            "📥 Download Attendance Log CSV",
+            data=st.session_state.attendance_df.to_csv(index=False).encode("utf-8"),
+            file_name="attendance_matrix.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
+    with c2:
+        st.markdown("### Reset Data")
+        if st.button("🚨 Clear All Attendance Logs"):
+            st.session_state.attendance_df = pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Status"])
+            save_attendance()
+            st.warning("All attendance records cleared!")
