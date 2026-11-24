@@ -408,114 +408,70 @@ if page == "📈 Analytics Dashboard":
             })
 
         summary_df = pd.DataFrame(stats)
-        active_summary_df = summary_df[summary_df["Member Status"] == "Active"]
+        active_summary_df = summary_df[summary_df["Member Status"] == "Active"].copy()
 
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Active Roster", len(active_summary_df))
         m2.metric("Tracked Events", total_sessions)
         avg_att = active_summary_df["Attendance Rate"].mean() if not active_summary_df.empty else 0
         m3.metric("Alliance Turnout", f"{avg_att:.1f}%")
-        total_zero_pts = summary_df["Zero Points Count"].sum() if not summary_df.empty else 0
+        total_zero_pts = active_summary_df["Zero Points Count"].sum() if not active_summary_df.empty else 0
         m4.metric("Zero-Point Instances", total_zero_pts, delta=f"-{total_zero_pts} inactive" if total_zero_pts > 0 else "Optimal", delta_color="inverse")
 
         st.markdown("---")
         st.markdown("### 🎯 Minimum Attendance Threshold & Top Performers")
 
-        f_col1, f_col2, f_col3 = st.columns([2, 1.5, 1.5])
-        min_threshold = f_col1.slider(
+        min_threshold = st.slider(
             "Minimum Required Attendance (%)",
             min_value=0,
             max_value=100,
-            value=70,
+            value=80,
             step=5
         )
-        roster_scope = f_col2.selectbox(
-            "Member Scope",
-            ["Active Only", "All Roster (Incl. Inactive)"]
-        )
-        threshold_view = f_col3.selectbox(
-            "Threshold View",
-            ["All in Scope", "Below Minimum Only", "Meeting Minimum Only"]
-        )
 
-        scoped_df = active_summary_df.copy() if roster_scope == "Active Only" else summary_df.copy()
-        scoped_df["Meets Target"] = scoped_df["Attendance Rate"] >= min_threshold
+        qualifying_df = active_summary_df[active_summary_df["Attendance Rate"] >= min_threshold].sort_values(
+            by=["Attendance Rate", "Active Count", "Player Name"],
+            ascending=[False, False, True],
+            key=lambda col: col.str.lower() if col.name == "Player Name" else col
+        ).copy()
 
-        meets_count = int(scoped_df["Meets Target"].sum())
-        below_count = int((~scoped_df["Meets Target"]).sum())
-        total_scoped = len(scoped_df)
+        qualifying_count = len(qualifying_df)
+        total_active = len(active_summary_df)
+        below_count = total_active - qualifying_count
 
         k1, k2, k3 = st.columns(3)
-        k1.metric(f"Meeting >= {min_threshold}%", f"{meets_count} / {total_scoped}")
-        k2.metric(f"Below {min_threshold}% Target", below_count)
-        pass_pct = (meets_count / total_scoped * 100) if total_scoped > 0 else 0.0
-        k3.metric("Compliance Rate", f"{pass_pct:.1f}%")
-
-        if threshold_view == "Below Minimum Only":
-            filtered_chart_df = scoped_df[~scoped_df["Meets Target"]].sort_values(
-                by=["Attendance Rate", "Player Name"],
-                ascending=[True, True],
-                key=lambda col: col.str.lower() if col.name == "Player Name" else col
-            )
-        elif threshold_view == "Meeting Minimum Only":
-            filtered_chart_df = scoped_df[scoped_df["Meets Target"]].sort_values(
-                by=["Attendance Rate", "Player Name"],
-                ascending=[False, True],
-                key=lambda col: col.str.lower() if col.name == "Player Name" else col
-            )
-        else:
-            filtered_chart_df = scoped_df.sort_values(
-                by=["Attendance Rate", "Player Name"],
-                ascending=[False, True],
-                key=lambda col: col.str.lower() if col.name == "Player Name" else col
-            )
+        k1.metric(f"At or Above {min_threshold}%", f"{qualifying_count} / {total_active}")
+        k2.metric(f"Below {min_threshold}%", below_count)
+        pass_pct = (qualifying_count / total_active * 100) if total_active > 0 else 0.0
+        k3.metric("Active Compliance", f"{pass_pct:.1f}%")
 
         left_vis, right_vis = st.columns([3, 2])
 
         with left_vis:
-            st.markdown(f"#### 📊 Attendance Rate vs. {min_threshold}% Target (Horizontal)")
-            if filtered_chart_df.empty:
-                st.info("No members match the selected threshold filter.")
+            st.markdown(f"#### 📊 Active Members Attending >= {min_threshold}% of Events")
+            if qualifying_df.empty:
+                st.info(f"No active members have attended at least {min_threshold}% of events.")
             else:
-                # Reverse order for horizontal bar chart so highest or lowest appears cleanly from top to bottom
-                bar_df = filtered_chart_df.iloc[::-1].set_index("Player Name")[["Attendance Rate"]]
-                st.caption(f"Target threshold: {min_threshold}% | Showing {len(bar_df)} member(s)")
+                bar_df = qualifying_df.iloc[::-1].set_index("Player Name")[["Attendance Rate"]]
+                st.caption(f"Showing {len(bar_df)} active member(s) at or above {min_threshold}%")
                 st.bar_chart(bar_df, horizontal=True, height=420, color="#38bdf8")
 
         with right_vis:
             st.markdown("#### 🏆 Top Performers Leaderboard")
-            lb_mode = st.radio(
-                "Leaderboard Display:",
-                ["Top Tier (Include All Ties)", "All Active Members Ranked"],
-                horizontal=True,
-                key="lb_display_mode"
-            )
-
-            ranked_active = active_summary_df.sort_values(
-                by=["Attendance Rate", "Active Count", "Total Logged", "Player Name"],
-                ascending=[False, False, False, True],
-                key=lambda col: col.str.lower() if col.name == "Player Name" else col
-            ).copy()
-
-            if ranked_active.empty:
-                st.info("No active member data to rank yet.")
+            if qualifying_df.empty:
+                st.info("No active members meet the selected threshold.")
             else:
-                if lb_mode == "Top Tier (Include All Ties)":
-                    top_rate = ranked_active["Attendance Rate"].max()
-                    top_lb = ranked_active[ranked_active["Attendance Rate"] == top_rate].copy()
-                else:
-                    top_lb = ranked_active.copy()
-
-                top_lb.insert(0, "Rank", range(1, len(top_lb) + 1))
-                top_lb["Turnout"] = (top_lb["Active Count"] + top_lb["Zero Points Count"]).astype(str) + "/" + top_lb["Total Logged"].astype(str)
-                top_lb["Rate"] = top_lb["Attendance Rate"].astype(str) + "%"
+                lb_df = qualifying_df.copy()
+                lb_df.insert(0, "Rank", range(1, len(lb_df) + 1))
+                lb_df["Turnout"] = (lb_df["Active Count"] + lb_df["Zero Points Count"]).astype(str) + "/" + lb_df["Total Logged"].astype(str)
+                lb_df["Rate"] = lb_df["Attendance Rate"].astype(str) + "%"
                 st.dataframe(
-                    top_lb[["Rank", "Player Name", "Rate", "Turnout", "Zero Points Count"]].rename(
+                    lb_df[["Rank", "Player Name", "Rate", "Turnout", "Zero Points Count"]].rename(
                         columns={"Zero Points Count": "0-Pt"}
                     ),
                     use_container_width=True,
                     hide_index=True,
-                    height=380
+                    height=420
                 )
 
         st.markdown("---")
@@ -1003,21 +959,4 @@ elif page == "⚙️ Data Management":
         st.download_button(
             "📥 Download Roster CSV",
             data=st.session_state.roster_df.to_csv(index=False).encode("utf-8"),
-            file_name="roster_data.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-        st.download_button(
-            "📥 Download Attendance Log CSV",
-            data=st.session_state.attendance_df.to_csv(index=False).encode("utf-8"),
-            file_name="attendance_matrix.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-
-    with c2:
-        st.markdown("### Reset Data")
-        if st.button("🚨 Clear All Attendance Logs"):
-            st.session_state.attendance_df = pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Status"])
-            save_attendance()
-            st.warning("All attendance records cleared!")
+            file_name="roster
