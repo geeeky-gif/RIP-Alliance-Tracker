@@ -73,49 +73,6 @@ st.markdown(
             border-radius: 12px;
             border: 1px solid rgba(255, 255, 255, 0.07);
         }
-        .tier-card {
-            background: rgba(15, 23, 42, 0.75);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 14px;
-            backdrop-filter: blur(8px);
-        }
-        .tier-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        }
-        .tier-title {
-            font-weight: 700;
-            font-size: 15px;
-        }
-        .tier-badge {
-            background: rgba(56, 189, 248, 0.15);
-            color: #38bdf8;
-            padding: 2px 10px;
-            border-radius: 999px;
-            font-size: 12px;
-            font-weight: 700;
-        }
-        .member-pill {
-            display: inline-block;
-            background: rgba(30, 41, 59, 0.9);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 6px;
-            padding: 4px 10px;
-            margin: 3px;
-            font-size: 13px;
-            color: #e2e8f0;
-        }
-        .member-pill span {
-            color: #94a3b8;
-            font-size: 11px;
-            margin-left: 4px;
-        }
         .stButton button {
             background: rgba(30, 41, 59, 0.7);
             color: #f1f5f9;
@@ -155,6 +112,62 @@ st.markdown(
         .stTabs [aria-selected="true"] {
             background: #2563eb !important;
             color: white !important;
+        }
+        .tier-card {
+            background: rgba(15, 23, 42, 0.72);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 16px 18px;
+            margin-bottom: 16px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+        }
+        .tier-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 10px;
+            margin-bottom: 12px;
+        }
+        .tier-title {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }
+        .tier-badge {
+            font-size: 12px;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 999px;
+            background: rgba(56, 189, 248, 0.15);
+            color: #38bdf8;
+            border: 1px solid rgba(56, 189, 248, 0.3);
+        }
+        .member-pill-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .member-pill {
+            background: rgba(30, 41, 59, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 13px;
+            color: #f1f5f9;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .member-pill-pct {
+            color: #94a3b8;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .tier-empty {
+            color: #64748b;
+            font-size: 13px;
+            font-style: italic;
         }
     </style>
     <div class="command-hero">
@@ -204,17 +217,17 @@ ALLIANCE_RANK_OPTIONS = ["Alliance Leader", "Deputy", "Officer", "Elite", "Membe
 ATTENDANCE_STATUS_OPTIONS = ["Active", "Zero Points", "Absent"]
 
 TIER_DEFINITIONS = [
-    ("100% Attendance Group", 100.0, 100.1, "#10b981"),
-    ("90% – 99% Group", 90.0, 100.0, "#34d399"),
-    ("80% – 89% Group", 80.0, 90.0, "#38bdf8"),
-    ("70% – 79% Group", 70.0, 80.0, "#60a5fa"),
-    ("60% – 69% Group", 60.0, 70.0, "#818cf8"),
-    ("50% – 59% Group", 50.0, 60.0, "#a78bfa"),
-    ("40% – 49% Group", 40.0, 50.0, "#fbbf24"),
-    ("30% – 39% Group", 30.0, 40.0, "#fb923c"),
-    ("20% – 29% Group", 20.0, 30.0, "#f87171"),
-    ("10% – 19% Group", 10.0, 20.0, "#ef4444"),
-    ("0% – 9% Group", 0.0, 10.0, "#dc2626"),
+    ("100%", "100% Attendance Group", 100.0, 100.1, "#34d399"),
+    ("90%", "90% – 99% Attendance Group", 90.0, 100.0, "#38bdf8"),
+    ("80%", "80% – 89% Attendance Group", 80.0, 90.0, "#818cf8"),
+    ("70%", "70% – 79% Attendance Group", 70.0, 80.0, "#a78bfa"),
+    ("60%", "60% – 69% Attendance Group", 60.0, 70.0, "#facc15"),
+    ("50%", "50% – 59% Attendance Group", 50.0, 60.0, "#fbbf24"),
+    ("40%", "40% – 49% Attendance Group", 40.0, 50.0, "#fb923c"),
+    ("30%", "30% – 39% Attendance Group", 30.0, 40.0, "#f97316"),
+    ("20%", "20% – 29% Attendance Group", 20.0, 30.0, "#f87171"),
+    ("10%", "10% – 19% Attendance Group", 10.0, 20.0, "#ef4444"),
+    ("0%", "0% – 9% Attendance Group", 0.0, 10.0, "#dc2626"),
 ]
 
 # ---------------------------------------------------------
@@ -273,12 +286,15 @@ def get_sorted_roster_names(active_only=True):
         return sorted(names, key=lambda x: x.lower())
     return []
 
-def calculate_member_stats():
+def build_member_stats_df():
     roster_df = st.session_state.roster_df
     att_df = st.session_state.attendance_df
-    total_sessions = att_df["Session ID"].nunique() if not att_df.empty else 0
+    if roster_df.empty:
+        return pd.DataFrame(), 0
 
+    total_sessions = att_df["Session ID"].nunique() if not att_df.empty else 0
     stats = []
+
     for _, p_row in roster_df.iterrows():
         p_name = p_row["Player Name"]
         p_status = p_row["Status"]
@@ -304,12 +320,19 @@ def calculate_member_stats():
             "Member Status": p_status,
             "Active Count": active_cnt,
             "Zero Points Count": zero_cnt,
-            "Absent Count": absent_cnt,
             "Total Logged": player_total_logged,
             "Attendance Rate": round(attendance_rate, 1)
         })
 
-    return pd.DataFrame(stats), total_sessions
+    summary_df = pd.DataFrame(stats)
+    if not summary_df.empty:
+        summary_df = summary_df.sort_values(
+            by=["Attendance Rate", "Player Name"],
+            ascending=[False, True],
+            key=lambda col: col.str.lower() if col.dtype == "object" else col
+        ).reset_index(drop=True)
+
+    return summary_df, total_sessions
 
 def add_member_to_roster(name, castle="35", lord="50", mil="", rank="Member", status="Active"):
     clean_name = str(name).strip()
@@ -324,202 +347,3 @@ def add_member_to_roster(name, castle="35", lord="50", mil="", rank="Member", st
         "Player Name": clean_name,
         "Castle Level": str(castle),
         "Lord Level": str(lord),
-        "Military Rank": str(mil),
-        "Alliance Rank": str(rank),
-        "Status": str(status)
-    }])
-    st.session_state.roster_df = pd.concat([st.session_state.roster_df, new_row], ignore_index=True)
-    save_roster()
-    return True, f"Added **{clean_name}** to the roster!"
-
-def add_member_to_session(session_id, event_name, event_date, player_name, status_val):
-    clean_name = str(player_name).strip()
-    if not clean_name:
-        return False, "Player name cannot be empty."
-
-    att_df = st.session_state.attendance_df
-    existing_in_session = att_df[
-        (att_df["Session ID"] == session_id) &
-        (att_df["Player Name"].str.strip().str.lower() == clean_name.lower())
-    ]
-    if not existing_in_session.empty:
-        return False, f"**{clean_name}** is already in this session."
-
-    new_entry = pd.DataFrame([{
-        "Session ID": session_id,
-        "Event": event_name,
-        "Date": str(event_date),
-        "Player Name": clean_name,
-        "Status": status_val
-    }])
-    st.session_state.attendance_df = pd.concat([st.session_state.attendance_df, new_entry], ignore_index=True)
-    save_attendance()
-    return True, f"Added **{clean_name}** ({status_val}) to this session!"
-
-def remove_member_from_session(session_id, player_name):
-    att_df = st.session_state.attendance_df
-    if att_df.empty:
-        return 0
-    mask = (att_df["Session ID"] == session_id) & (att_df["Player Name"].str.strip().str.lower() == str(player_name).strip().lower())
-    removed_count = int(mask.sum())
-    if removed_count > 0:
-        st.session_state.attendance_df = att_df[~mask].reset_index(drop=True)
-        save_attendance()
-    return removed_count
-
-def migrate_attendance_names(rename_map):
-    att_df = st.session_state.attendance_df
-    if att_df.empty or not rename_map:
-        return 0
-
-    updated_df = att_df.copy()
-    total_updated = 0
-
-    for old_name, new_name in rename_map.items():
-        if not old_name or not new_name or old_name == new_name:
-            continue
-        mask = updated_df["Player Name"].str.strip() == old_name.strip()
-        count = int(mask.sum())
-        if count > 0:
-            updated_df.loc[mask, "Player Name"] = new_name.strip()
-            total_updated += count
-
-    if total_updated > 0:
-        updated_df["_norm_name"] = updated_df["Player Name"].str.strip().str.lower()
-        updated_df = updated_df.drop_duplicates(subset=["Session ID", "_norm_name"], keep="last").drop(columns=["_norm_name"]).reset_index(drop=True)
-        st.session_state.attendance_df = updated_df
-        save_attendance()
-
-    return total_updated
-
-def purge_player_from_all_attendance(player_name):
-    att_df = st.session_state.attendance_df
-    if att_df.empty:
-        return 0
-    mask = att_df["Player Name"].str.strip().str.lower() == str(player_name).strip().lower()
-    removed_count = int(mask.sum())
-    if removed_count > 0:
-        st.session_state.attendance_df = att_df[~mask].reset_index(drop=True)
-        save_attendance()
-    return removed_count
-
-def normalize_attendance_df(df):
-    cleaned = df.copy()
-    cleaned.columns = [str(c).strip() for c in cleaned.columns]
-
-    if "Attended" in cleaned.columns and "Status" not in cleaned.columns:
-        cleaned["Status"] = cleaned["Attended"].apply(
-            lambda x: "Active" if str(x).strip().lower() in ["true", "1", "yes", "active"] else "Absent"
-        )
-
-    for col in ["Session ID", "Event", "Date", "Player Name", "Status"]:
-        if col not in cleaned.columns:
-            cleaned[col] = ""
-
-    cleaned["Event"] = cleaned["Event"].fillna("").astype(str).str.strip()
-    cleaned["Date"] = cleaned["Date"].fillna("").astype(str).str.strip()
-    cleaned["Player Name"] = cleaned["Player Name"].fillna("").astype(str).str.strip()
-    cleaned["Session ID"] = cleaned["Session ID"].fillna("").astype(str).str.strip()
-
-    status_map = {
-        "active": "Active",
-        "attended": "Active",
-        "zero points": "Zero Points",
-        "zero_points": "Zero Points",
-        "0 points": "Zero Points",
-        "absent": "Absent",
-        "missed": "Absent",
-    }
-    cleaned["Status"] = cleaned["Status"].fillna("Active").astype(str).str.strip().apply(
-        lambda s: status_map.get(s.lower(), s if s in ATTENDANCE_STATUS_OPTIONS else "Active")
-    )
-
-    cleaned = cleaned[cleaned["Player Name"] != ""]
-
-    missing_sid_mask = cleaned["Session ID"] == ""
-    if missing_sid_mask.any():
-        cleaned.loc[missing_sid_mask, "Session ID"] = cleaned.loc[missing_sid_mask].apply(
-            lambda r: f"{r['Date'] or 'UnknownDate'}_{r['Event'] or 'ImportedEvent'}_Import",
-            axis=1
-        )
-
-    return cleaned[["Session ID", "Event", "Date", "Player Name", "Status"]].reset_index(drop=True)
-
-# ---------------------------------------------------------
-# SIDEBAR NAVIGATION
-# ---------------------------------------------------------
-st.sidebar.markdown("### 📊 NAVIGATION")
-page = st.sidebar.radio("Select View:", [
-    "📈 Analytics Dashboard",
-    "📊 Attendance Tiers (10% Blocks)",
-    "📝 Quick Log / Edit Sessions",
-    "✏️ Edit Roster",
-    "📁 Upload Roster CSV",
-    "📁 Upload Attendance CSV",
-    "⚙️ Data Management"
-])
-
-# ---------------------------------------------------------
-# PAGE 1: ANALYTICS DASHBOARD (THRESHOLD FILTERING)
-# ---------------------------------------------------------
-if page == "📈 Analytics Dashboard":
-    st.subheader("📈 Alliance Intelligence & Threshold Filtering")
-
-    roster_df = st.session_state.roster_df
-    if roster_df.empty:
-        st.warning("No players found in roster.")
-    else:
-        summary_df, total_sessions = calculate_member_stats()
-        active_summary_df = summary_df[summary_df["Member Status"] == "Active"]
-
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Active Roster", len(active_summary_df))
-        m2.metric("Tracked Events", total_sessions)
-        avg_att = active_summary_df["Attendance Rate"].mean() if not active_summary_df.empty else 0
-        m3.metric("Alliance Turnout", f"{avg_att:.1f}%")
-        total_zero_pts = summary_df["Zero Points Count"].sum() if not summary_df.empty else 0
-        m4.metric("Zero-Point Instances", total_zero_pts, delta=f"-{total_zero_pts} inactive" if total_zero_pts > 0 else "Optimal", delta_color="inverse")
-
-        st.markdown("---")
-        st.markdown("#### 🎯 Filter Members by Attendance Threshold")
-
-        f1, f2, f3, f4 = st.columns([2, 2.5, 1.5, 2])
-        filter_mode = f1.selectbox(
-            "Filter Condition",
-            ["Below Threshold (<)", "At or Above Threshold (>=)", "Show All Members"],
-            index=0
-        )
-        threshold_val = f2.slider(
-            "Attendance Threshold (%)",
-            min_value=0,
-            max_value=100,
-            value=70,
-            step=5,
-            disabled=(filter_mode == "Show All Members")
-        )
-        scope_filter = f3.selectbox(
-            "Roster Scope",
-            ["Active Only", "All Members"],
-            index=0
-        )
-        sort_order = f4.selectbox(
-            "Sort By",
-            ["Lowest Attendance First", "Highest Attendance First", "Alphabetical (A-Z)"],
-            index=0
-        )
-
-        filtered_df = summary_df.copy()
-        if scope_filter == "Active Only":
-            filtered_df = filtered_df[filtered_df["Member Status"] == "Active"]
-
-        if filter_mode == "Below Threshold (<)":
-            filtered_df = filtered_df[filtered_df["Attendance Rate"] < float(threshold_val)]
-            section_label = f"Members Below {threshold_val}% Attendance ({len(filtered_df)})"
-        elif filter_mode == "At or Above Threshold (>=)":
-            filtered_df = filtered_df[filtered_df["Attendance Rate"] >= float(threshold_val)]
-            section_label = f"Members At or Above {threshold_val}% Attendance ({len(filtered_df)})"
-        else:
-            section_label = f"All Roster Members ({len(filtered_df)})"
-
-        if sort_order == "Lowest Attendance First":
-            filtered_df = filtered_df.sort_values(by=["Attendance Rate", "Player Name"], ascending=
