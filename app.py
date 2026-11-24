@@ -523,4 +523,55 @@ elif page == "📝 Quick Log / Edit Sessions":
                 qa1, qa2, qa3, qa4 = st.columns([3, 1.5, 1.5, 2])
                 qa_name = qa1.text_input("New Player Name", placeholder="Exact in-game name")
                 qa_castle = qa2.selectbox("Castle Level", CASTLE_LEVEL_OPTIONS, index=34)
-                qa_rank =
+                qa_rank = qa3.selectbox("Alliance Rank", ALLIANCE_RANK_OPTIONS, index=4)
+                qa_att_status = qa4.selectbox("Status for This Event", ATTENDANCE_STATUS_OPTIONS, index=0)
+
+                if st.form_submit_button("Add & Include in Session", type="primary"):
+                    ok, msg = add_member_to_roster(
+                        name=qa_name,
+                        castle=qa_castle,
+                        rank=qa_rank,
+                        status="Active"
+                    )
+                    if ok:
+                        st.session_state[f"quick_status_{session_id}_{qa_name.strip()}"] = qa_att_status
+                        st.success(f"{msg} Included below as **{qa_att_status}**.")
+                    else:
+                        st.error(msg)
+
+        roster_names = get_sorted_roster_names(active_only=True)
+
+        if not roster_names:
+            st.error("No active players found in roster. Add a teammate above or update statuses in the Roster Editor.")
+        else:
+            st.markdown("---")
+            st.markdown("### 📋 Active Members Attendance Matrix")
+            st.info("Listing **Active** members alphabetically. Default status is **Active**.")
+
+            initial_statuses = [
+                st.session_state.get(f"quick_status_{session_id}_{name}", "Active")
+                for name in roster_names
+            ]
+
+            session_grid_df = pd.DataFrame({
+                "Player Name": roster_names,
+                "Status": initial_statuses
+            })
+
+            edited_session_df = st.data_editor(
+                session_grid_df,
+                column_config={
+                    "Player Name": st.column_config.TextColumn("Player Name", disabled=True),
+                    "Status": st.column_config.SelectboxColumn(
+                        "Attendance Status",
+                        options=ATTENDANCE_STATUS_OPTIONS,
+                        required=True
+                    )
+                },
+                hide_index=True,
+                use_container_width=True,
+                key=f"editor_new_{session_id}"
+            )
+
+            st.markdown("---")
+            if st.button("💾 Save New Event Session", type="primary", use_container_width=True):
