@@ -490,8 +490,10 @@ if page == "📈 Analytics Dashboard":
             st.info(f"No active members have attended at least {min_threshold}% of events.")
         else:
             bar_df = qualifying_df.iloc[::-1].set_index("Player Name")[["Attendance Rate"]]
-            st.caption(f"Showing {len(bar_df)} active member(s) at or above {min_threshold}%")
-            st.bar_chart(bar_df, horizontal=True, height=420, color="#38bdf8")
+            # Scale height up and down with member count so every bar renders cleanly without shrinking or clipping
+            dynamic_chart_height = max(220, len(bar_df) * 36 + 80)
+            st.caption(f"Showing all {len(bar_df)} active member(s) at or above {min_threshold}%")
+            st.bar_chart(bar_df, horizontal=True, height=dynamic_chart_height, color="#38bdf8")
 
         st.markdown("---")
         st.markdown("#### 📋 Active Member Performance Matrix")
