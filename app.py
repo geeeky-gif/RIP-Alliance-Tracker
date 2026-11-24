@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import os
-import math
 from datetime import datetime
 
 st.set_page_config(page_title="RIP Alliance Command Center", layout="wide")
@@ -461,7 +460,7 @@ if page == "📈 Analytics Dashboard":
         m4.metric("Zero-Point Instances", total_zero_pts, delta=f"-{total_zero_pts} inactive" if total_zero_pts > 0 else "Optimal", delta_color="inverse")
 
         st.markdown("---")
-        st.markdown("### 🎯 Attendance Cutoff & Top Performers")
+        st.markdown("### 🎯 Attendance Threshold")
 
         min_threshold = st.slider(
             "Attendance Threshold (%)",
@@ -469,7 +468,7 @@ if page == "📈 Analytics Dashboard":
             max_value=100,
             value=80,
             step=5,
-            help="Left chart shows active members attending at or above this percentage. Right leaderboard shows the top percentile tier (100% minus slider)."
+            help="Displays active members attending at or above this percentage."
         )
 
         qualifying_df = active_summary_df[active_summary_df["Attendance Rate"] >= min_threshold].sort_values(
@@ -478,55 +477,21 @@ if page == "📈 Analytics Dashboard":
             key=lambda col: col.str.lower() if col.name == "Player Name" else col
         ).copy()
 
-        top_percentile_pct = max(0, 100 - min_threshold)
         total_active_count = len(active_summary_df)
-        if total_active_count > 0:
-            if top_percentile_pct == 0:
-                top_tier_count = 1
-            else:
-                top_tier_count = max(1, math.ceil(total_active_count * (top_percentile_pct / 100.0)))
+        qualifying_count = len(qualifying_df)
+        qualifying_pct = (qualifying_count / total_active_count * 100) if total_active_count > 0 else 0.0
+
+        k1, k2 = st.columns(2)
+        k1.metric(f"Active Members >= {min_threshold}%", f"{qualifying_count} / {total_active_count}")
+        k2.metric("Share Meeting Threshold", f"{qualifying_pct:.1f}%")
+
+        st.markdown(f"#### 📊 Active Members Attending >= {min_threshold}%")
+        if qualifying_df.empty:
+            st.info(f"No active members have attended at least {min_threshold}% of events.")
         else:
-            top_tier_count = 0
-
-        k1, k2, k3 = st.columns(3)
-        k1.metric(f"Active Members >= {min_threshold}%", f"{len(qualifying_df)} / {total_active_count}")
-        k2.metric("Top Tier Cutoff", f"Top {top_percentile_pct if top_percentile_pct > 0 else 100}%")
-        k3.metric("Top Tier Shown", top_tier_count)
-
-        left_vis, right_vis = st.columns([3, 2])
-
-        with left_vis:
-            st.markdown(f"#### 📊 Active Members Attending >= {min_threshold}%")
-            if qualifying_df.empty:
-                st.info(f"No active members have attended at least {min_threshold}% of events.")
-            else:
-                bar_df = qualifying_df.iloc[::-1].set_index("Player Name")[["Attendance Rate"]]
-                st.caption(f"Showing {len(bar_df)} active member(s) at or above {min_threshold}%")
-                st.bar_chart(bar_df, horizontal=True, height=420, color="#38bdf8")
-
-        with right_vis:
-            st.markdown(f"#### 🏆 Top Performers (Top {top_percentile_pct if top_percentile_pct > 0 else 100}% of Active)")
-            ranked_active = active_summary_df.sort_values(
-                by=["Attendance Rate", "Active Count", "Total Logged", "Player Name"],
-                ascending=[False, False, False, True],
-                key=lambda col: col.str.lower() if col.name == "Player Name" else col
-            ).copy()
-
-            if ranked_active.empty or top_tier_count == 0:
-                st.info("No active member attendance data available yet.")
-            else:
-                top_lb = ranked_active.head(top_tier_count).copy()
-                top_lb.insert(0, "Rank", range(1, len(top_lb) + 1))
-                top_lb["Turnout"] = (top_lb["Active Count"] + top_lb["Zero Points Count"]).astype(str) + "/" + top_lb["Total Logged"].astype(str)
-                top_lb["Rate"] = top_lb["Attendance Rate"].astype(str) + "%"
-                st.dataframe(
-                    top_lb[["Rank", "Player Name", "Rate", "Turnout", "Zero Points Count"]].rename(
-                        columns={"Zero Points Count": "0-Pt"}
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                    height=420
-                )
+            bar_df = qualifying_df.iloc[::-1].set_index("Player Name")[["Attendance Rate"]]
+            st.caption(f"Showing {len(bar_df)} active member(s) at or above {min_threshold}%")
+            st.bar_chart(bar_df, horizontal=True, height=420, color="#38bdf8")
 
         st.markdown("---")
         st.markdown("#### 📋 Active Member Performance Matrix")
