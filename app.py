@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import math
 from datetime import datetime
 
 st.set_page_config(page_title="RIP Alliance Command Center", layout="wide")
@@ -419,54 +420,66 @@ if page == "📈 Analytics Dashboard":
         m4.metric("Zero-Point Instances", total_zero_pts, delta=f"-{total_zero_pts} inactive" if total_zero_pts > 0 else "Optimal", delta_color="inverse")
 
         st.markdown("---")
-        st.markdown("### 🎯 Minimum Attendance Threshold & Top Performers")
+        st.markdown("### 🎯 Attendance Cutoff & Top Performers")
 
         min_threshold = st.slider(
-            "Minimum Required Attendance (%) — Active Members Only",
+            "Attendance Threshold (%)",
             min_value=0,
             max_value=100,
             value=80,
-            step=5
+            step=5,
+            help="Left chart shows active members attending at or above this percentage. Right leaderboard shows the top percentile tier (100% minus slider)."
         )
 
         qualifying_df = active_summary_df[active_summary_df["Attendance Rate"] >= min_threshold].sort_values(
-            by=["Attendance Rate", "Active Count", "Total Logged", "Player Name"],
-            ascending=[False, False, False, True],
+            by=["Attendance Rate", "Active Count", "Player Name"],
+            ascending=[False, False, True],
             key=lambda col: col.str.lower() if col.name == "Player Name" else col
         ).copy()
 
-        total_active = len(active_summary_df)
-        qual_count = len(qualifying_df)
-        below_count = total_active - qual_count
+        top_percentile_pct = max(0, 100 - min_threshold)
+        total_active_count = len(active_summary_df)
+        if total_active_count > 0:
+            if top_percentile_pct == 0:
+                top_tier_count = 1
+            else:
+                top_tier_count = max(1, math.ceil(total_active_count * (top_percentile_pct / 100.0)))
+        else:
+            top_tier_count = 0
 
         k1, k2, k3 = st.columns(3)
-        k1.metric(f"Attended >= {min_threshold}%", f"{qual_count} / {total_active}")
-        k2.metric(f"Below {min_threshold}%", below_count)
-        qual_pct = (qual_count / total_active * 100) if total_active > 0 else 0.0
-        k3.metric("Qualifying Share", f"{qual_pct:.1f}%")
+        k1.metric(f"Active Members >= {min_threshold}%", f"{len(qualifying_df)} / {total_active_count}")
+        k2.metric("Top Tier Cutoff", f"Top {top_percentile_pct if top_percentile_pct > 0 else 100}%")
+        k3.metric("Top Tier Shown", top_tier_count)
 
         left_vis, right_vis = st.columns([3, 2])
 
         with left_vis:
-            st.markdown(f"#### 📊 Active Members at or Above {min_threshold}% (Horizontal)")
+            st.markdown(f"#### 📊 Active Members Attending >= {min_threshold}%")
             if qualifying_df.empty:
-                st.info(f"No active members have reached {min_threshold}% attendance yet.")
+                st.info(f"No active members have attended at least {min_threshold}% of events.")
             else:
                 bar_df = qualifying_df.iloc[::-1].set_index("Player Name")[["Attendance Rate"]]
-                st.caption(f"Showing {qual_count} active member(s) with attendance >= {min_threshold}%")
+                st.caption(f"Showing {len(bar_df)} active member(s) at or above {min_threshold}%")
                 st.bar_chart(bar_df, horizontal=True, height=420, color="#38bdf8")
 
         with right_vis:
-            st.markdown(f"#### 🏆 Top Performers (>= {min_threshold}%)")
-            if qualifying_df.empty:
-                st.info(f"No active members meet the {min_threshold}% threshold.")
+            st.markdown(f"#### 🏆 Top Performers (Top {top_percentile_pct if top_percentile_pct > 0 else 100}% of Active)")
+            ranked_active = active_summary_df.sort_values(
+                by=["Attendance Rate", "Active Count", "Total Logged", "Player Name"],
+                ascending=[False, False, False, True],
+                key=lambda col: col.str.lower() if col.name == "Player Name" else col
+            ).copy()
+
+            if ranked_active.empty or top_tier_count == 0:
+                st.info("No active member attendance data available yet.")
             else:
-                lb_df = qualifying_df.copy()
-                lb_df.insert(0, "Rank", range(1, len(lb_df) + 1))
-                lb_df["Turnout"] = (lb_df["Active Count"] + lb_df["Zero Points Count"]).astype(str) + "/" + lb_df["Total Logged"].astype(str)
-                lb_df["Rate"] = lb_df["Attendance Rate"].astype(str) + "%"
+                top_lb = ranked_active.head(top_tier_count).copy()
+                top_lb.insert(0, "Rank", range(1, len(top_lb) + 1))
+                top_lb["Turnout"] = (top_lb["Active Count"] + top_lb["Zero Points Count"]).astype(str) + "/" + top_lb["Total Logged"].astype(str)
+                top_lb["Rate"] = top_lb["Attendance Rate"].astype(str) + "%"
                 st.dataframe(
-                    lb_df[["Rank", "Player Name", "Rate", "Turnout", "Zero Points Count"]].rename(
+                    top_lb[["Rank", "Player Name", "Rate", "Turnout", "Zero Points Count"]].rename(
                         columns={"Zero Points Count": "0-Pt"}
                     ),
                     use_container_width=True,
@@ -475,14 +488,18 @@ if page == "📈 Analytics Dashboard":
                 )
 
         st.markdown("---")
-        st.markdown("#### 📋 Complete Member Performance Matrix")
-        display_df = summary_df.copy()
+        st.markdown("#### 📋 Active Member Performance Matrix")
+        display_df = active_summary_df.sort_values(
+            by=["Attendance Rate", "Active Count", "Player Name"],
+            ascending=[False, False, True],
+            key=lambda col: col.str.lower() if col.name == "Player Name" else col
+        ).copy()
         display_df["Turnout"] = (display_df["Active Count"] + display_df["Zero Points Count"]).astype(str) + " / " + display_df["Total Logged"].astype(str)
         display_df["Active Part."] = display_df["Active Count"].astype(str)
         display_df["Zero Points"] = display_df["Zero Points Count"].astype(str)
         display_df["Attendance %"] = display_df["Attendance Rate"].astype(str) + "%"
 
-        st.dataframe(display_df[["Player Name", "Castle Level", "Lord Level", "Alliance Rank", "Member Status", "Turnout", "Active Part.", "Zero Points", "Attendance %"]], use_container_width=True, hide_index=True)
+        st.dataframe(display_df[["Player Name", "Castle Level", "Lord Level", "Alliance Rank", "Turnout", "Active Part.", "Zero Points", "Attendance %"]], use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
 # PAGE 2: QUICK LOG / EDIT SESSIONS
@@ -563,4 +580,219 @@ elif page == "📝 Quick Log / Edit Sessions":
                 for _, row in edited_session_df.iterrows():
                     new_records.append({
                         "Session ID": final_session_id,
-                        "Event": selected_event
+                        "Event": selected_event,
+                        "Date": str(event_date),
+                        "Player Name": row["Player Name"],
+                        "Status": row["Status"]
+                    })
+
+                new_df = pd.DataFrame(new_records)
+                st.session_state.attendance_df = st.session_state.attendance_df[st.session_state.attendance_df["Session ID"] != final_session_id]
+                st.session_state.attendance_df = pd.concat([st.session_state.attendance_df, new_df], ignore_index=True)
+                save_attendance()
+                st.success(f"Successfully recorded session **{selected_event}** on **{event_date}**!")
+
+    with tab_edit:
+        att_df = st.session_state.attendance_df
+        if att_df.empty or "Session ID" not in att_df.columns:
+            st.info("No recorded sessions available to edit.")
+        else:
+            unique_sessions = att_df[["Session ID", "Event", "Date"]].drop_duplicates().to_dict('records')
+
+            selected_session_to_edit = st.selectbox(
+                "Select Session to Edit",
+                options=unique_sessions,
+                format_func=lambda x: f"{x['Event']} on {x['Date']} (ID: {x['Session ID']})"
+            )
+
+            if selected_session_to_edit:
+                target_session_id = selected_session_to_edit["Session ID"]
+                session_logs = att_df[att_df["Session ID"] == target_session_id]
+
+                current_statuses = {row["Player Name"]: row["Status"] for _, row in session_logs.iterrows()}
+                session_players = sorted(session_logs["Player Name"].dropna().unique().tolist(), key=lambda x: x.lower())
+                session_players_lower = {p.strip().lower() for p in session_players}
+
+                st.markdown(f"### Editing Session: **{selected_session_to_edit['Event']}** ({selected_session_to_edit['Date']})")
+
+                col_add_exp, col_rem_exp = st.columns(2)
+
+                with col_add_exp.expander("➕ Add Missing Member to This Session"):
+                    all_roster_names = get_sorted_roster_names(active_only=False)
+                    missing_from_session = [n for n in all_roster_names if n.strip().lower() not in session_players_lower]
+
+                    add_tab_existing, add_tab_new = st.tabs(["From Existing Roster", "New Player"])
+
+                    with add_tab_existing:
+                        if not missing_from_session:
+                            st.info("All current roster members are already in this session.")
+                        else:
+                            with st.form(f"add_existing_to_session_{target_session_id}", clear_on_submit=True):
+                                chosen_member = st.selectbox("Select Roster Member", missing_from_session)
+                                chosen_status = st.selectbox("Attendance Status", ATTENDANCE_STATUS_OPTIONS, index=0)
+
+                                if st.form_submit_button("Add Member to Session", type="primary", use_container_width=True):
+                                    ok, msg = add_member_to_session(
+                                        session_id=target_session_id,
+                                        event_name=selected_session_to_edit["Event"],
+                                        event_date=selected_session_to_edit["Date"],
+                                        player_name=chosen_member,
+                                        status_val=chosen_status
+                                    )
+                                    if ok:
+                                        st.success(msg)
+                                        st.rerun()
+                                    else:
+                                        st.error(msg)
+
+                    with add_tab_new:
+                        with st.form(f"add_new_to_session_{target_session_id}", clear_on_submit=True):
+                            ns_name = st.text_input("New Player Name", placeholder="Exact in-game name")
+                            ns_castle = st.selectbox("Castle Level", CASTLE_LEVEL_OPTIONS, index=34)
+                            ns_rank = st.selectbox("Alliance Rank", ALLIANCE_RANK_OPTIONS, index=4)
+                            ns_status = st.selectbox("Attendance Status", ATTENDANCE_STATUS_OPTIONS, index=0)
+
+                            if st.form_submit_button("Add to Roster & Session", type="primary", use_container_width=True):
+                                clean_ns = ns_name.strip()
+                                ok_roster, msg_roster = add_member_to_roster(
+                                    name=clean_ns,
+                                    castle=ns_castle,
+                                    rank=ns_rank,
+                                    status="Active"
+                                )
+                                if ok_roster:
+                                    ok_sess, msg_sess = add_member_to_session(
+                                        session_id=target_session_id,
+                                        event_name=selected_session_to_edit["Event"],
+                                        event_date=selected_session_to_edit["Date"],
+                                        player_name=clean_ns,
+                                        status_val=ns_status
+                                    )
+                                    if ok_sess:
+                                        st.success(f"{msg_roster} {msg_sess}")
+                                        st.rerun()
+                                    else:
+                                        st.error(msg_sess)
+                                else:
+                                    st.error(msg_roster)
+
+                with col_rem_exp.expander("🗑️ Remove Member from This Session"):
+                    if not session_players:
+                        st.info("No members in this session.")
+                    else:
+                        with st.form(f"remove_from_session_{target_session_id}", clear_on_submit=True):
+                            members_to_remove = st.multiselect(
+                                "Select Member(s) to Remove from This Event",
+                                options=session_players,
+                                help="Removes their entry from this specific session only. Does not delete them from your main roster."
+                            )
+                            if st.form_submit_button("Remove Selected from Session", use_container_width=True):
+                                if not members_to_remove:
+                                    st.warning("Select at least one member to remove.")
+                                else:
+                                    removed_total = 0
+                                    for m in members_to_remove:
+                                        removed_total += remove_member_from_session(target_session_id, m)
+                                    st.success(f"Removed {removed_total} entry(s) from this session!")
+                                    st.rerun()
+
+                st.info("Modify statuses in the table below and click **Update Session Matrix**.")
+
+                edit_grid_data = []
+                for p_name in session_players:
+                    stat = current_statuses.get(p_name, "Active")
+                    if stat not in ATTENDANCE_STATUS_OPTIONS:
+                        stat = "Active"
+                    edit_grid_data.append({"Player Name": p_name, "Status": stat})
+
+                edit_session_df = pd.DataFrame(edit_grid_data)
+
+                updated_session_df = st.data_editor(
+                    edit_session_df,
+                    column_config={
+                        "Player Name": st.column_config.TextColumn("Player Name", disabled=True),
+                        "Status": st.column_config.SelectboxColumn(
+                            "Attendance Status",
+                            options=ATTENDANCE_STATUS_OPTIONS,
+                            required=True
+                        )
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    key=f"editor_edit_{target_session_id}"
+                )
+
+                st.markdown("---")
+                col_save, col_del = st.columns([2, 1])
+
+                if col_save.button("💾 Update Session Matrix", type="primary", use_container_width=True):
+                    updated_records = []
+                    for _, row in updated_session_df.iterrows():
+                        updated_records.append({
+                            "Session ID": target_session_id,
+                            "Event": selected_session_to_edit["Event"],
+                            "Date": selected_session_to_edit["Date"],
+                            "Player Name": row["Player Name"],
+                            "Status": row["Status"]
+                        })
+
+                    st.session_state.attendance_df = st.session_state.attendance_df[st.session_state.attendance_df["Session ID"] != target_session_id]
+                    updated_df = pd.DataFrame(updated_records)
+                    st.session_state.attendance_df = pd.concat([st.session_state.attendance_df, updated_df], ignore_index=True)
+                    save_attendance()
+                    st.success("Session successfully updated!")
+
+                if col_del.button("🗑️ Delete Entire Session", use_container_width=True):
+                    st.session_state.attendance_df = st.session_state.attendance_df[st.session_state.attendance_df["Session ID"] != target_session_id]
+                    save_attendance()
+                    st.warning("Session deleted permanently!")
+                    st.rerun()
+
+# ---------------------------------------------------------
+# PAGE 3: EDIT ROSTER (ADD MEMBER + RENAME WITH HISTORY + MERGE/PURGE)
+# ---------------------------------------------------------
+elif page == "✏️ Edit Roster":
+    st.subheader("✏️ Direct Roster Management")
+    st.markdown("Add new members, rename existing players (**past attendance history automatically moves with them**), or merge/clean up duplicate avatar names.")
+
+    top_col1, top_col2 = st.columns(2)
+
+    with top_col1.expander("➕ Add New Member to Roster", expanded=False):
+        with st.form("add_new_member_roster_form", clear_on_submit=True):
+            r1, r2, r3 = st.columns(3)
+            add_name = r1.text_input("Player Name", placeholder="Enter exact player name")
+            add_rank = r2.selectbox("Alliance Rank", ALLIANCE_RANK_OPTIONS, index=4)
+            add_status = r3.selectbox("Member Status", STATUS_OPTIONS, index=0)
+
+            r4, r5, r6 = st.columns(3)
+            add_castle = r4.selectbox("Castle Level", CASTLE_LEVEL_OPTIONS, index=34)
+            add_lord = r5.selectbox("Lord Level", LORD_LEVEL_OPTIONS, index=50)
+            add_mil = r6.selectbox("Military Rank", MILITARY_RANK_OPTIONS, index=0)
+
+            if st.form_submit_button("➕ Add Member", type="primary", use_container_width=True):
+                ok, msg = add_member_to_roster(
+                    name=add_name,
+                    castle=add_castle,
+                    lord=add_lord,
+                    mil=add_mil,
+                    rank=add_rank,
+                    status=add_status
+                )
+                if ok:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
+
+    with top_col2.expander("🔀 Merge / Purge Duplicate Avatar History", expanded=False):
+        att_df = st.session_state.attendance_df
+        roster_names_all = get_sorted_roster_names(active_only=False)
+        att_names_all = sorted(att_df["Player Name"].dropna().unique().tolist(), key=lambda x: x.lower()) if not att_df.empty else []
+        all_known_names = sorted(list(set(roster_names_all + att_names_all)), key=lambda x: x.lower())
+
+        if not all_known_names:
+            st.info("No player records found yet.")
+        else:
+            merge_tab, purge_tab = st.tabs(["Merge Old Name -> Current Name", "Remove Name Completely"])
+
+            with merge_
