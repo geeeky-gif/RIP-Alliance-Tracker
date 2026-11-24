@@ -113,48 +113,6 @@ st.markdown(
             background: #2563eb !important;
             color: white !important;
         }
-        .tier-card {
-            background: rgba(15, 23, 42, 0.75);
-            border: 1px solid rgba(255, 255, 255, 0.09);
-            border-radius: 12px;
-            padding: 14px 16px;
-            margin-bottom: 14px;
-            backdrop-filter: blur(8px);
-        }
-        .tier-card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-            padding-bottom: 8px;
-            margin-bottom: 10px;
-        }
-        .tier-title {
-            font-size: 15px;
-            font-weight: 700;
-            color: #f8fafc;
-        }
-        .tier-badge {
-            font-size: 12px;
-            font-weight: 700;
-            padding: 2px 10px;
-            border-radius: 999px;
-            background: rgba(56, 189, 248, 0.15);
-            color: #38bdf8;
-            border: 1px solid rgba(56, 189, 248, 0.35);
-        }
-        .tier-member-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 4px 0;
-            font-size: 13px;
-            color: #cbd5e1;
-            border-bottom: 1px dashed rgba(255, 255, 255, 0.04);
-        }
-        .tier-member-row:last-child {
-            border-bottom: none;
-        }
     </style>
     <div class="command-hero">
         <h1>RIP ALLIANCE COMMAND CENTER</h1>
@@ -201,20 +159,6 @@ MILITARY_RANK_OPTIONS = [
 STATUS_OPTIONS = ["Active", "Inactive"]
 ALLIANCE_RANK_OPTIONS = ["Alliance Leader", "Deputy", "Officer", "Elite", "Member"]
 ATTENDANCE_STATUS_OPTIONS = ["Active", "Zero Points", "Absent"]
-
-TIER_ORDER = [
-    "100% Group",
-    "90% - 99% Group",
-    "80% - 89% Group",
-    "70% - 79% Group",
-    "60% - 69% Group",
-    "50% - 59% Group",
-    "40% - 49% Group",
-    "30% - 39% Group",
-    "20% - 29% Group",
-    "10% - 19% Group",
-    "0% - 9% Group"
-]
 
 # ---------------------------------------------------------
 # STATE INITIALIZATION
@@ -271,13 +215,6 @@ def get_sorted_roster_names(active_only=True):
         names = df["Player Name"].dropna().astype(str).tolist()
         return sorted(names, key=lambda x: x.lower())
     return []
-
-def get_attendance_tier(rate):
-    if rate >= 100.0:
-        return "100% Group"
-    bucket = int(rate // 10) * 10
-    bucket = max(0, min(90, bucket))
-    return f"{bucket}% - {bucket + 9}% Group"
 
 def add_member_to_roster(name, castle="35", lord="50", mil="", rank="Member", status="Active"):
     clean_name = str(name).strip()
@@ -336,6 +273,11 @@ def remove_member_from_session(session_id, player_name):
     return removed_count
 
 def migrate_attendance_names(rename_map):
+    """
+    Updates historical attendance records when players are renamed.
+    rename_map: dict of {old_name: new_name}
+    If both old_name and new_name exist in the same Session ID, keeps one record per session.
+    """
     att_df = st.session_state.attendance_df
     if att_df.empty or not rename_map:
         return 0
@@ -353,6 +295,7 @@ def migrate_attendance_names(rename_map):
             total_updated += count
 
     if total_updated > 0:
+        # Deduplicate if an old name was merged into an existing name in the same session
         updated_df["_norm_name"] = updated_df["Player Name"].str.strip().str.lower()
         updated_df = updated_df.drop_duplicates(subset=["Session ID", "_norm_name"], keep="last").drop(columns=["_norm_name"]).reset_index(drop=True)
         st.session_state.attendance_df = updated_df
@@ -458,7 +401,6 @@ if page == "📈 Analytics Dashboard":
                 active_cnt, zero_cnt, absent_cnt, player_total_logged = 0, 0, 0, 0
                 attendance_rate = 0.0
 
-            rounded_rate = round(attendance_rate, 1)
             stats.append({
                 "Player Name": p_name,
                 "Castle Level": p_row.get("Castle Level", "—"),
@@ -468,8 +410,7 @@ if page == "📈 Analytics Dashboard":
                 "Active Count": active_cnt,
                 "Zero Points Count": zero_cnt,
                 "Total Logged": player_total_logged,
-                "Attendance Rate": rounded_rate,
-                "Attendance Tier": get_attendance_tier(rounded_rate)
+                "Attendance Rate": round(attendance_rate, 1)
             })
 
         summary_df = pd.DataFrame(stats)
@@ -485,160 +426,28 @@ if page == "📈 Analytics Dashboard":
 
         st.markdown("---")
 
-        tab_explorer, tab_tiers = st.tabs(["🎯 Threshold Explorer & Roster", "📊 10% Attendance Bracket Grid"])
+        if total_sessions > 0 and not att_df.empty:
+            c_chart1, c_chart2 = st.columns(2)
+            with c_chart1:
+                st.markdown("#### 📉 Overall Status Breakdown")
+                status_counts = att_df["Status"].value_counts()
+                st.bar_chart(status_counts, color="#38bdf8")
 
-        # -------------------------------------------------
-        # TAB A: INTERACTIVE THRESHOLD SLIDER & FILTER
-        # -------------------------------------------------
-        with tab_explorer:
-            f1, f2, f3, f4 = st.columns([2, 2.5, 1.5, 1.5])
-            filter_mode = f1.selectbox(
-                "View Section",
-                ["All Members", "Below Threshold (<)", "At or Above Threshold (≥)"],
-                index=0
-            )
-            threshold_val = f2.slider(
-                "Attendance Threshold (%)",
-                min_value=0,
-                max_value=100,
-                value=70,
-                step=5,
-                disabled=(filter_mode == "All Members")
-            )
-            status_filter = f3.selectbox(
-                "Member Status",
-                ["Active Only", "All", "Inactive Only"],
-                index=0
-            )
-            rank_filter = f4.selectbox(
-                "Alliance Rank",
-                ["All Ranks"] + ALLIANCE_RANK_OPTIONS,
-                index=0
-            )
-
-            filtered_df = summary_df.copy()
-            if status_filter == "Active Only":
-                filtered_df = filtered_df[filtered_df["Member Status"] == "Active"]
-            elif status_filter == "Inactive Only":
-                filtered_df = filtered_df[filtered_df["Member Status"] == "Inactive"]
-
-            if rank_filter != "All Ranks":
-                filtered_df = filtered_df[filtered_df["Alliance Rank"] == rank_filter]
-
-            if filter_mode == "Below Threshold (<)":
-                filtered_df = filtered_df[filtered_df["Attendance Rate"] < threshold_val].sort_values(
-                    by=["Attendance Rate", "Player Name"], ascending=[True, True]
-                )
-                section_caption = f"Showing **{len(filtered_df)}** member(s) **below {threshold_val}%** attendance"
-            elif filter_mode == "At or Above Threshold (≥)":
-                filtered_df = filtered_df[filtered_df["Attendance Rate"] >= threshold_val].sort_values(
-                    by=["Attendance Rate", "Player Name"], ascending=[False, True]
-                )
-                section_caption = f"Showing **{len(filtered_df)}** member(s) **at or above {threshold_val}%** attendance"
-            else:
-                filtered_df = filtered_df.sort_values(by="Player Name", key=lambda c: c.str.lower())
-                section_caption = f"Showing all **{len(filtered_df)}** matching member(s)"
-
-            st.caption(section_caption)
-
-            if filtered_df.empty:
-                st.info("No members match the selected threshold and filters.")
-            else:
-                display_df = filtered_df.copy()
-                display_df["Turnout"] = (display_df["Active Count"] + display_df["Zero Points Count"]).astype(str) + " / " + display_df["Total Logged"].astype(str)
-
-                st.dataframe(
-                    display_df[[
-                        "Player Name",
-                        "Castle Level",
-                        "Lord Level",
-                        "Alliance Rank",
-                        "Member Status",
-                        "Attendance Tier",
-                        "Turnout",
-                        "Active Count",
-                        "Zero Points Count",
-                        "Attendance Rate"
-                    ]],
-                    column_config={
-                        "Active Count": st.column_config.NumberColumn("Active Part."),
-                        "Zero Points Count": st.column_config.NumberColumn("Zero Pts"),
-                        "Attendance Rate": st.column_config.ProgressColumn(
-                            "Attendance %",
-                            min_value=0,
-                            max_value=100,
-                            format="%.1f%%"
-                        )
-                    },
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-        # -------------------------------------------------
-        # TAB B: 10% ATTENDANCE BRACKET GRID
-        # -------------------------------------------------
-        with tab_tiers:
-            t_col1, t_col2 = st.columns([2, 3])
-            tier_status_filter = t_col1.radio(
-                "Roster Scope",
-                ["Active Members Only", "All Members"],
-                horizontal=True,
-                key="tier_scope_radio"
-            )
-            hide_empty_tiers = t_col2.checkbox("Hide empty 10% brackets", value=False)
-
-            tier_source_df = active_summary_df if tier_status_filter == "Active Members Only" else summary_df
-
-            # Compact visual distribution bar across the 10% brackets
-            tier_counts_series = pd.Series(
-                {tier: int((tier_source_df["Attendance Tier"] == tier).sum()) for tier in TIER_ORDER}
-            )
-            st.markdown("#### 📈 Headcount by 10% Attendance Bracket")
-            st.bar_chart(tier_counts_series, color="#38bdf8", height=220)
-
+            with c_chart2:
+                st.markdown("#### 🏆 Top Attendance Performers (Active Only)")
+                top_performers = active_summary_df.sort_values(by="Attendance Rate", ascending=False).head(10)
+                if not top_performers.empty:
+                    st.bar_chart(top_performers.set_index("Player Name")["Attendance Rate"], color="#818cf8")
             st.markdown("---")
-            st.markdown("#### 🗂️ Member Breakdown by 10% Bracket")
 
-            tiers_to_render = [
-                t for t in TIER_ORDER
-                if not hide_empty_tiers or int((tier_source_df["Attendance Tier"] == t).sum()) > 0
-            ]
+        st.markdown("#### 📋 Complete Member Performance Matrix")
+        display_df = summary_df.copy()
+        display_df["Turnout"] = (display_df["Active Count"] + display_df["Zero Points Count"]).astype(str) + " / " + display_df["Total Logged"].astype(str)
+        display_df["Active Part."] = display_df["Active Count"].astype(str)
+        display_df["Zero Points"] = display_df["Zero Points Count"].astype(str)
+        display_df["Attendance %"] = display_df["Attendance Rate"].astype(str) + "%"
 
-            if not tiers_to_render:
-                st.info("No members found for the selected scope.")
-            else:
-                grid_cols = st.columns(3)
-                for idx, tier_label in enumerate(tiers_to_render):
-                    tier_members = tier_source_df[tier_source_df["Attendance Tier"] == tier_label].sort_values(
-                        by=["Attendance Rate", "Player Name"], ascending=[False, True]
-                    )
-                    member_count = len(tier_members)
-
-                    if member_count == 0:
-                        rows_html = '<div style="color:#64748b; font-size:12px; padding:6px 0;">No members in this bracket</div>'
-                    else:
-                        row_items = []
-                        for _, m_row in tier_members.iterrows():
-                            turnout_txt = f"{m_row['Active Count'] + m_row['Zero Points Count']}/{m_row['Total Logged']}"
-                            row_items.append(
-                                f'<div class="tier-member-row">'
-                                f'<span><strong>{m_row["Player Name"]}</strong> <span style="color:#64748b; font-size:11px;">({m_row["Alliance Rank"]})</span></span>'
-                                f'<span style="color:#38bdf8; font-weight:600;">{m_row["Attendance Rate"]:.1f}% <span style="color:#94a3b8; font-weight:400;">[{turnout_txt}]</span></span>'
-                                f'</div>'
-                            )
-                        rows_html = "".join(row_items)
-
-                    card_html = (
-                        f'<div class="tier-card">'
-                        f'<div class="tier-card-header">'
-                        f'<span class="tier-title">{tier_label}</span>'
-                        f'<span class="tier-badge">{member_count}</span>'
-                        f'</div>'
-                        f'{rows_html}'
-                        f'</div>'
-                    )
-                    with grid_cols[idx % 3]:
-                        st.markdown(card_html, unsafe_allow_html=True)
+        st.dataframe(display_df[["Player Name", "Castle Level", "Lord Level", "Alliance Rank", "Member Status", "Turnout", "Active Part.", "Zero Points", "Attendance %"]], use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
 # PAGE 2: QUICK LOG / EDIT SESSIONS
@@ -756,6 +565,7 @@ elif page == "📝 Quick Log / Edit Sessions":
 
                 col_add_exp, col_rem_exp = st.columns(2)
 
+                # Add missing member to this existing session
                 with col_add_exp.expander("➕ Add Missing Member to This Session"):
                     all_roster_names = get_sorted_roster_names(active_only=False)
                     missing_from_session = [n for n in all_roster_names if n.strip().lower() not in session_players_lower]
@@ -815,6 +625,7 @@ elif page == "📝 Quick Log / Edit Sessions":
                                 else:
                                     st.error(msg_roster)
 
+                # Remove member from this existing session
                 with col_rem_exp.expander("🗑️ Remove Member from This Session"):
                     if not session_players:
                         st.info("No members in this session.")
@@ -998,4 +809,139 @@ elif page == "✏️ Edit Roster":
             new_castle = c4.selectbox("Castle Level", CASTLE_LEVEL_OPTIONS, index=castle_idx, key=f"edit_castle_{idx}")
 
             curr_lord = str(row.get("Lord Level", "50"))
-            lord_idx =
+            lord_idx = LORD_LEVEL_OPTIONS.index(curr_lord) if curr_lord in LORD_LEVEL_OPTIONS else 0
+            new_lord = c5.selectbox("Lord Level", LORD_LEVEL_OPTIONS, index=lord_idx, key=f"edit_lord_{idx}")
+
+            curr_mil = str(row.get("Military Rank", ""))
+            mil_idx = MILITARY_RANK_OPTIONS.index(curr_mil) if curr_mil in MILITARY_RANK_OPTIONS else 0
+            new_mil = c6.selectbox("Military Rank", MILITARY_RANK_OPTIONS, index=mil_idx, key=f"edit_mil_{idx}")
+
+            clean_new_name = new_name.strip() if new_name.strip() else p_name
+            if clean_new_name != p_name:
+                rename_mappings[p_name] = clean_new_name
+
+            edited_roster_data.append({
+                "Player Name": clean_new_name,
+                "Castle Level": new_castle,
+                "Lord Level": new_lord,
+                "Military Rank": new_mil,
+                "Alliance Rank": new_rank,
+                "Status": new_status
+            })
+
+    st.markdown("---")
+    if st.button("💾 Save All Roster Changes", type="primary", use_container_width=True):
+        new_df = pd.DataFrame(edited_roster_data)
+        # Deduplicate roster rows if someone renamed a duplicate into an existing member name
+        new_df["_norm"] = new_df["Player Name"].str.strip().str.lower()
+        new_df = new_df.drop_duplicates(subset=["_norm"], keep="last").drop(columns=["_norm"]).reset_index(drop=True)
+
+        st.session_state.roster_df = new_df
+        save_roster()
+
+        migrated_records = migrate_attendance_names(rename_mappings)
+        if migrated_records > 0:
+            st.success(f"Roster updated and migrated **{migrated_records}** historical attendance record(s) to the new name(s)!")
+        else:
+            st.success("Roster profiles updated successfully!")
+        st.rerun()
+
+# ---------------------------------------------------------
+# PAGE 4: UPLOAD ROSTER CSV
+# ---------------------------------------------------------
+elif page == "📁 Upload Roster CSV":
+    st.subheader("📁 Simple Roster Import")
+    st.markdown("Upload a CSV file containing columns: `Player Name`, `Castle Level`, `Lord Level`, `Military Rank`, `Alliance Rank`, `Status`.")
+
+    uploaded_file = st.file_uploader("Choose CSV file", type=["csv"], key="roster_csv_uploader")
+
+    if uploaded_file is not None:
+        try:
+            uploaded_df = pd.read_csv(uploaded_file, dtype=str)
+            st.markdown("#### Preview Uploaded Data:")
+            st.dataframe(uploaded_df.head(), use_container_width=True)
+
+            if st.button("Confirm & Overwrite Roster", type="primary"):
+                uploaded_df.columns = [c.strip() for c in uploaded_df.columns]
+
+                for col, default_val in [("Castle Level", "40"), ("Lord Level", "50"), ("Military Rank", ""), ("Alliance Rank", "Member"), ("Status", "Active")]:
+                    if col not in uploaded_df.columns:
+                        uploaded_df[col] = default_val
+
+                st.session_state.roster_df = uploaded_df[["Player Name", "Castle Level", "Lord Level", "Military Rank", "Alliance Rank", "Status"]]
+                save_roster()
+                st.success("Roster successfully replaced and saved!")
+        except Exception as e:
+            st.error(f"Error reading CSV file: {e}")
+
+# ---------------------------------------------------------
+# PAGE 5: UPLOAD ATTENDANCE CSV
+# ---------------------------------------------------------
+elif page == "📁 Upload Attendance CSV":
+    st.subheader("📁 Attendance Records Import")
+    st.markdown("Upload an attendance CSV file containing `Session ID`, `Event`, `Date`, `Player Name`, and `Status` (`Active`, `Zero Points`, or `Absent`).")
+
+    uploaded_att_file = st.file_uploader("Choose Attendance CSV file", type=["csv"], key="attendance_csv_uploader")
+
+    if uploaded_att_file is not None:
+        try:
+            raw_att_df = pd.read_csv(uploaded_att_file, dtype=str)
+            normalized_df = normalize_attendance_df(raw_att_df)
+
+            if normalized_df.empty:
+                st.warning("No valid attendance rows with a `Player Name` were found in the uploaded file.")
+            else:
+                st.markdown("#### Preview Normalized Attendance Records:")
+                st.dataframe(normalized_df.head(15), use_container_width=True, hide_index=True)
+
+                import_mode = st.radio(
+                    "Import Mode:",
+                    ["Merge / Update matching Session IDs", "Overwrite All Attendance Logs"],
+                    horizontal=True
+                )
+
+                if st.button("Confirm Attendance Import", type="primary"):
+                    if import_mode == "Overwrite All Attendance Logs":
+                        st.session_state.attendance_df = normalized_df
+                    else:
+                        existing_df = normalize_attendance_df(st.session_state.attendance_df) if not st.session_state.attendance_df.empty else pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Status"])
+                        imported_session_ids = normalized_df["Session ID"].unique().tolist()
+                        filtered_existing = existing_df[~existing_df["Session ID"].isin(imported_session_ids)]
+                        st.session_state.attendance_df = pd.concat([filtered_existing, normalized_df], ignore_index=True)
+
+                    save_attendance()
+                    st.success(f"Successfully imported **{len(normalized_df)}** attendance records across **{normalized_df['Session ID'].nunique()}** session(s)!")
+        except Exception as e:
+            st.error(f"Error reading attendance CSV file: {e}")
+
+# ---------------------------------------------------------
+# PAGE 6: DATA MANAGEMENT
+# ---------------------------------------------------------
+elif page == "⚙️ Data Management":
+    st.subheader("⚙️ Data Management & Exports")
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+        st.markdown("### Export Data")
+        st.download_button(
+            "📥 Download Roster CSV",
+            data=st.session_state.roster_df.to_csv(index=False).encode("utf-8"),
+            file_name="roster_data.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+        st.download_button(
+            "📥 Download Attendance Log CSV",
+            data=st.session_state.attendance_df.to_csv(index=False).encode("utf-8"),
+            file_name="attendance_matrix.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
+    with c2:
+        st.markdown("### Reset Data")
+        if st.button("🚨 Clear All Attendance Logs"):
+            st.session_state.attendance_df = pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Status"])
+            save_attendance()
+            st.warning("All attendance records cleared!")
