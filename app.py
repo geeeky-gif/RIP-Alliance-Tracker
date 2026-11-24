@@ -261,6 +261,59 @@ def add_member_to_session(session_id, event_name, event_date, player_name, statu
     save_attendance()
     return True, f"Added **{clean_name}** ({status_val}) to this session!"
 
+def remove_member_from_session(session_id, player_name):
+    att_df = st.session_state.attendance_df
+    if att_df.empty:
+        return 0
+    mask = (att_df["Session ID"] == session_id) & (att_df["Player Name"].str.strip().str.lower() == str(player_name).strip().lower())
+    removed_count = int(mask.sum())
+    if removed_count > 0:
+        st.session_state.attendance_df = att_df[~mask].reset_index(drop=True)
+        save_attendance()
+    return removed_count
+
+def migrate_attendance_names(rename_map):
+    """
+    Updates historical attendance records when players are renamed.
+    rename_map: dict of {old_name: new_name}
+    If both old_name and new_name exist in the same Session ID, keeps one record per session.
+    """
+    att_df = st.session_state.attendance_df
+    if att_df.empty or not rename_map:
+        return 0
+
+    updated_df = att_df.copy()
+    total_updated = 0
+
+    for old_name, new_name in rename_map.items():
+        if not old_name or not new_name or old_name == new_name:
+            continue
+        mask = updated_df["Player Name"].str.strip() == old_name.strip()
+        count = int(mask.sum())
+        if count > 0:
+            updated_df.loc[mask, "Player Name"] = new_name.strip()
+            total_updated += count
+
+    if total_updated > 0:
+        # Deduplicate if an old name was merged into an existing name in the same session
+        updated_df["_norm_name"] = updated_df["Player Name"].str.strip().str.lower()
+        updated_df = updated_df.drop_duplicates(subset=["Session ID", "_norm_name"], keep="last").drop(columns=["_norm_name"]).reset_index(drop=True)
+        st.session_state.attendance_df = updated_df
+        save_attendance()
+
+    return total_updated
+
+def purge_player_from_all_attendance(player_name):
+    att_df = st.session_state.attendance_df
+    if att_df.empty:
+        return 0
+    mask = att_df["Player Name"].str.strip().str.lower() == str(player_name).strip().lower()
+    removed_count = int(mask.sum())
+    if removed_count > 0:
+        st.session_state.attendance_df = att_df[~mask].reset_index(drop=True)
+        save_attendance()
+    return removed_count
+
 def normalize_attendance_df(df):
     cleaned = df.copy()
     cleaned.columns = [str(c).strip() for c in cleaned.columns]
@@ -510,23 +563,24 @@ elif page == "📝 Quick Log / Edit Sessions":
 
                 st.markdown(f"### Editing Session: **{selected_session_to_edit['Event']}** ({selected_session_to_edit['Date']})")
 
+                col_add_exp, col_rem_exp = st.columns(2)
+
                 # Add missing member to this existing session
-                with st.expander("➕ Add Missing Member to This Session"):
+                with col_add_exp.expander("➕ Add Missing Member to This Session"):
                     all_roster_names = get_sorted_roster_names(active_only=False)
                     missing_from_session = [n for n in all_roster_names if n.strip().lower() not in session_players_lower]
 
-                    add_tab_existing, add_tab_new = st.tabs(["From Existing Roster", "New Player (Add to Roster & Session)"])
+                    add_tab_existing, add_tab_new = st.tabs(["From Existing Roster", "New Player"])
 
                     with add_tab_existing:
                         if not missing_from_session:
-                            st.info("All current roster members are already included in this session.")
+                            st.info("All current roster members are already in this session.")
                         else:
                             with st.form(f"add_existing_to_session_{target_session_id}", clear_on_submit=True):
-                                ex1, ex2 = st.columns([3, 2])
-                                chosen_member = ex1.selectbox("Select Roster Member", missing_from_session)
-                                chosen_status = ex2.selectbox("Attendance Status", ATTENDANCE_STATUS_OPTIONS, index=0)
+                                chosen_member = st.selectbox("Select Roster Member", missing_from_session)
+                                chosen_status = st.selectbox("Attendance Status", ATTENDANCE_STATUS_OPTIONS, index=0)
 
-                                if st.form_submit_button("Add Member to Session", type="primary"):
+                                if st.form_submit_button("Add Member to Session", type="primary", use_container_width=True):
                                     ok, msg = add_member_to_session(
                                         session_id=target_session_id,
                                         event_name=selected_session_to_edit["Event"],
@@ -542,13 +596,12 @@ elif page == "📝 Quick Log / Edit Sessions":
 
                     with add_tab_new:
                         with st.form(f"add_new_to_session_{target_session_id}", clear_on_submit=True):
-                            ns1, ns2, ns3, ns4 = st.columns([3, 1.5, 1.5, 2])
-                            ns_name = ns1.text_input("New Player Name", placeholder="Exact in-game name")
-                            ns_castle = ns2.selectbox("Castle Level", CASTLE_LEVEL_OPTIONS, index=34)
-                            ns_rank = ns3.selectbox("Alliance Rank", ALLIANCE_RANK_OPTIONS, index=4)
-                            ns_status = ns4.selectbox("Attendance Status", ATTENDANCE_STATUS_OPTIONS, index=0)
+                            ns_name = st.text_input("New Player Name", placeholder="Exact in-game name")
+                            ns_castle = st.selectbox("Castle Level", CASTLE_LEVEL_OPTIONS, index=34)
+                            ns_rank = st.selectbox("Alliance Rank", ALLIANCE_RANK_OPTIONS, index=4)
+                            ns_status = st.selectbox("Attendance Status", ATTENDANCE_STATUS_OPTIONS, index=0)
 
-                            if st.form_submit_button("Add to Roster & Session", type="primary"):
+                            if st.form_submit_button("Add to Roster & Session", type="primary", use_container_width=True):
                                 clean_ns = ns_name.strip()
                                 ok_roster, msg_roster = add_member_to_roster(
                                     name=clean_ns,
@@ -571,6 +624,27 @@ elif page == "📝 Quick Log / Edit Sessions":
                                         st.error(msg_sess)
                                 else:
                                     st.error(msg_roster)
+
+                # Remove member from this existing session
+                with col_rem_exp.expander("🗑️ Remove Member from This Session"):
+                    if not session_players:
+                        st.info("No members in this session.")
+                    else:
+                        with st.form(f"remove_from_session_{target_session_id}", clear_on_submit=True):
+                            members_to_remove = st.multiselect(
+                                "Select Member(s) to Remove from This Event",
+                                options=session_players,
+                                help="Removes their entry from this specific session only. Does not delete them from your main roster."
+                            )
+                            if st.form_submit_button("Remove Selected from Session", use_container_width=True):
+                                if not members_to_remove:
+                                    st.warning("Select at least one member to remove.")
+                                else:
+                                    removed_total = 0
+                                    for m in members_to_remove:
+                                        removed_total += remove_member_from_session(target_session_id, m)
+                                    st.success(f"Removed {removed_total} entry(s) from this session!")
+                                    st.rerun()
 
                 st.info("Modify statuses in the table below and click **Update Session Matrix**.")
 
@@ -625,13 +699,15 @@ elif page == "📝 Quick Log / Edit Sessions":
                     st.rerun()
 
 # ---------------------------------------------------------
-# PAGE 3: EDIT ROSTER (ADD MEMBER + DROPDOWN EDITOR)
+# PAGE 3: EDIT ROSTER (ADD MEMBER + RENAME WITH HISTORY + MERGE/PURGE)
 # ---------------------------------------------------------
 elif page == "✏️ Edit Roster":
     st.subheader("✏️ Direct Roster Management")
-    st.markdown("Add new members, update dropdown attributes, or set departed members to **Inactive** to freeze their historical stats.")
+    st.markdown("Add new members, rename existing players (**past attendance history automatically moves with them**), or merge/clean up duplicate avatar names.")
 
-    with st.expander("➕ Add New Member to Roster", expanded=False):
+    top_col1, top_col2 = st.columns(2)
+
+    with top_col1.expander("➕ Add New Member to Roster", expanded=False):
         with st.form("add_new_member_roster_form", clear_on_submit=True):
             r1, r2, r3 = st.columns(3)
             add_name = r1.text_input("Player Name", placeholder="Enter exact player name")
@@ -658,18 +734,65 @@ elif page == "✏️ Edit Roster":
                 else:
                     st.error(msg)
 
+    with top_col2.expander("🔀 Merge / Purge Duplicate Avatar History", expanded=False):
+        att_df = st.session_state.attendance_df
+        roster_names_all = get_sorted_roster_names(active_only=False)
+        att_names_all = sorted(att_df["Player Name"].dropna().unique().tolist(), key=lambda x: x.lower()) if not att_df.empty else []
+        all_known_names = sorted(list(set(roster_names_all + att_names_all)), key=lambda x: x.lower())
+
+        if not all_known_names:
+            st.info("No player records found yet.")
+        else:
+            merge_tab, purge_tab = st.tabs(["Merge Old Name → Current Name", "Remove Name Completely"])
+
+            with merge_tab:
+                with st.form("merge_duplicate_history_form"):
+                    old_avatar = st.selectbox("Old / Duplicate Avatar Name", all_known_names, key="merge_old")
+                    target_avatar = st.selectbox("Merge Into Current Roster Member", roster_names_all if roster_names_all else all_known_names, key="merge_new")
+                    remove_old_from_roster = st.checkbox("Also delete old avatar row from Roster", value=True)
+
+                    if st.form_submit_button("Merge Attendance History", type="primary", use_container_width=True):
+                        if old_avatar.strip().lower() == target_avatar.strip().lower():
+                            st.error("Select two different names to merge.")
+                        else:
+                            moved = migrate_attendance_names({old_avatar: target_avatar})
+                            if remove_old_from_roster:
+                                st.session_state.roster_df = st.session_state.roster_df[
+                                    st.session_state.roster_df["Player Name"].str.strip().str.lower() != old_avatar.strip().lower()
+                                ].reset_index(drop=True)
+                                save_roster()
+                            st.success(f"Merged **{moved}** attendance record(s) from **{old_avatar}** into **{target_avatar}**!")
+                            st.rerun()
+
+            with purge_tab:
+                with st.form("purge_phantom_member_form"):
+                    purge_target = st.selectbox("Select Name to Remove", all_known_names, key="purge_sel")
+                    purge_roster = st.checkbox("Remove from Roster", value=True)
+                    purge_att = st.checkbox("Remove from All Attendance Logs", value=True)
+
+                    if st.form_submit_button("Remove Selected Member", use_container_width=True):
+                        removed_att = purge_player_from_all_attendance(purge_target) if purge_att else 0
+                        if purge_roster:
+                            st.session_state.roster_df = st.session_state.roster_df[
+                                st.session_state.roster_df["Player Name"].str.strip().str.lower() != purge_target.strip().lower()
+                            ].reset_index(drop=True)
+                            save_roster()
+                        st.success(f"Removed **{purge_target}** ({removed_att} attendance record(s) cleared).")
+                        st.rerun()
+
     st.markdown("---")
     roster_df = st.session_state.roster_df.copy()
     sorted_roster = roster_df.sort_values(by="Player Name", key=lambda col: col.str.lower()).reset_index(drop=True)
 
     edited_roster_data = []
+    rename_mappings = {}
 
     for idx, row in sorted_roster.iterrows():
         p_name = row["Player Name"]
         with st.expander(f"🛡️ {p_name} — Rank: {row.get('Alliance Rank', 'Member')} | Status: {row.get('Status', 'Active')}"):
             c1, c2, c3 = st.columns(3)
 
-            new_name = c1.text_input("Player Name", value=p_name, key=f"edit_name_{idx}")
+            new_name = c1.text_input("Player Name (renaming keeps all history)", value=p_name, key=f"edit_name_{idx}")
 
             curr_rank = row.get("Alliance Rank", "Member")
             rank_idx = ALLIANCE_RANK_OPTIONS.index(curr_rank) if curr_rank in ALLIANCE_RANK_OPTIONS else 4
@@ -677,7 +800,7 @@ elif page == "✏️ Edit Roster":
 
             curr_status = row.get("Status", "Active")
             status_idx = STATUS_OPTIONS.index(curr_status) if curr_status in STATUS_OPTIONS else 0
-            new_status = c3.selectbox("Member Status", STATUS_OPTIONS, index=status_idx, key=f"edit_status_{idx}", help="Set to Inactive to exclude from ongoing attendance calculations following a castle takeover or name change.")
+            new_status = c3.selectbox("Member Status", STATUS_OPTIONS, index=status_idx, key=f"edit_status_{idx}", help="Set to Inactive to exclude from future event sessions while preserving past records.")
 
             c4, c5, c6 = st.columns(3)
 
@@ -693,8 +816,12 @@ elif page == "✏️ Edit Roster":
             mil_idx = MILITARY_RANK_OPTIONS.index(curr_mil) if curr_mil in MILITARY_RANK_OPTIONS else 0
             new_mil = c6.selectbox("Military Rank", MILITARY_RANK_OPTIONS, index=mil_idx, key=f"edit_mil_{idx}")
 
+            clean_new_name = new_name.strip() if new_name.strip() else p_name
+            if clean_new_name != p_name:
+                rename_mappings[p_name] = clean_new_name
+
             edited_roster_data.append({
-                "Player Name": new_name.strip(),
+                "Player Name": clean_new_name,
                 "Castle Level": new_castle,
                 "Lord Level": new_lord,
                 "Military Rank": new_mil,
@@ -705,9 +832,19 @@ elif page == "✏️ Edit Roster":
     st.markdown("---")
     if st.button("💾 Save All Roster Changes", type="primary", use_container_width=True):
         new_df = pd.DataFrame(edited_roster_data)
+        # Deduplicate roster rows if someone renamed a duplicate into an existing member name
+        new_df["_norm"] = new_df["Player Name"].str.strip().str.lower()
+        new_df = new_df.drop_duplicates(subset=["_norm"], keep="last").drop(columns=["_norm"]).reset_index(drop=True)
+
         st.session_state.roster_df = new_df
         save_roster()
-        st.success("Roster profiles updated successfully!")
+
+        migrated_records = migrate_attendance_names(rename_mappings)
+        if migrated_records > 0:
+            st.success(f"Roster updated and migrated **{migrated_records}** historical attendance record(s) to the new name(s)!")
+        else:
+            st.success("Roster profiles updated successfully!")
+        st.rerun()
 
 # ---------------------------------------------------------
 # PAGE 4: UPLOAD ROSTER CSV
