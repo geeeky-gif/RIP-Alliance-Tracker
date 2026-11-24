@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import altair as alt
 import os
 from datetime import datetime
 
@@ -441,9 +440,6 @@ if page == "📈 Analytics Dashboard":
 
         scoped_df = active_summary_df.copy() if roster_scope == "Active Only" else summary_df.copy()
         scoped_df["Meets Target"] = scoped_df["Attendance Rate"] >= min_threshold
-        scoped_df["Threshold Group"] = scoped_df["Meets Target"].map(
-            {True: f"Meets >= {min_threshold}%", False: f"Below {min_threshold}%"}
-        )
 
         meets_count = int(scoped_df["Meets Target"].sum())
         below_count = int((~scoped_df["Meets Target"]).sum())
@@ -457,108 +453,69 @@ if page == "📈 Analytics Dashboard":
 
         if threshold_view == "Below Minimum Only":
             filtered_chart_df = scoped_df[~scoped_df["Meets Target"]].sort_values(
-                by=["Attendance Rate", "Player Name"], ascending=[True, True]
+                by=["Attendance Rate", "Player Name"],
+                ascending=[True, True],
+                key=lambda col: col.str.lower() if col.name == "Player Name" else col
             )
         elif threshold_view == "Meeting Minimum Only":
             filtered_chart_df = scoped_df[scoped_df["Meets Target"]].sort_values(
-                by=["Attendance Rate", "Active Count", "Player Name"], ascending=[False, False, True]
+                by=["Attendance Rate", "Player Name"],
+                ascending=[False, True],
+                key=lambda col: col.str.lower() if col.name == "Player Name" else col
             )
         else:
             filtered_chart_df = scoped_df.sort_values(
-                by=["Attendance Rate", "Active Count", "Player Name"], ascending=[False, False, True]
+                by=["Attendance Rate", "Player Name"],
+                ascending=[False, True],
+                key=lambda col: col.str.lower() if col.name == "Player Name" else col
             )
 
         left_vis, right_vis = st.columns([3, 2])
 
         with left_vis:
-            st.markdown(f"#### 📊 Horizontal Attendance vs. {min_threshold}% Target")
+            st.markdown(f"#### 📊 Attendance Rate vs. {min_threshold}% Target (Horizontal)")
             if filtered_chart_df.empty:
                 st.info("No members match the selected threshold filter.")
             else:
-                plot_df = filtered_chart_df.copy()
-                plot_df["Turnout"] = (plot_df["Active Count"] + plot_df["Zero Points Count"]).astype(str) + "/" + plot_df["Total Logged"].astype(str)
-                chart_height = max(280, min(720, len(plot_df) * 24 + 60))
-
-                bars = (
-                    alt.Chart(plot_df)
-                    .mark_bar(cornerRadiusEnd=3)
-                    .encode(
-                        y=alt.Y(
-                            "Player Name:N",
-                            sort=alt.EncodingSortField(field="Attendance Rate", order="descending"),
-                            axis=alt.Axis(title=None, labelLimit=220, labelColor="#e2e8f0")
-                        ),
-                        x=alt.X(
-                            "Attendance Rate:Q",
-                            scale=alt.Scale(domain=[0, 100]),
-                            axis=alt.Axis(title="Attendance (%)", labelColor="#94a3b8", titleColor="#94a3b8")
-                        ),
-                        color=alt.Color(
-                            "Threshold Group:N",
-                            scale=alt.Scale(
-                                domain=[f"Meets >= {min_threshold}%", f"Below {min_threshold}%"],
-                                range=["#38bdf8", "#f97316"]
-                            ),
-                            legend=alt.Legend(title=None, labelColor="#e2e8f0", orient="top")
-                        ),
-                        tooltip=[
-                            alt.Tooltip("Player Name:N", title="Player"),
-                            alt.Tooltip("Attendance Rate:Q", title="Attendance %"),
-                            alt.Tooltip("Turnout:N", title="Turnout"),
-                            alt.Tooltip("Active Count:Q", title="Active"),
-                            alt.Tooltip("Zero Points Count:Q", title="Zero Points")
-                        ]
-                    )
-                )
-
-                target_rule = (
-                    alt.Chart(pd.DataFrame({"target": [float(min_threshold)]}))
-                    .mark_rule(color="#f43f5e", strokeDash=[5, 4], strokeWidth=2)
-                    .encode(x="target:Q")
-                )
-
-                st.altair_chart((bars + target_rule).properties(height=chart_height), use_container_width=True)
+                # Reverse order for horizontal bar chart so highest or lowest appears cleanly from top to bottom
+                bar_df = filtered_chart_df.iloc[::-1].set_index("Player Name")[["Attendance Rate"]]
+                st.caption(f"Target threshold: {min_threshold}% | Showing {len(bar_df)} member(s)")
+                st.bar_chart(bar_df, horizontal=True, height=420, color="#38bdf8")
 
         with right_vis:
-            lb_col1, lb_col2 = st.columns([2, 1.4])
-            lb_col1.markdown("#### 🏆 Top Performers Leaderboard")
-            lb_scope = lb_col2.selectbox(
-                "Leaderboard View",
-                ["All Tied at Top %", "Top 15", "Top 25", "Everyone (Active)"],
-                label_visibility="collapsed"
+            st.markdown("#### 🏆 Top Performers Leaderboard")
+            lb_mode = st.radio(
+                "Leaderboard Display:",
+                ["Top Tier (Include All Ties)", "All Active Members Ranked"],
+                horizontal=True,
+                key="lb_display_mode"
             )
 
             ranked_active = active_summary_df.sort_values(
                 by=["Attendance Rate", "Active Count", "Total Logged", "Player Name"],
-                ascending=[False, False, False, True]
+                ascending=[False, False, False, True],
+                key=lambda col: col.str.lower() if col.name == "Player Name" else col
             ).copy()
 
             if ranked_active.empty:
                 st.info("No active member data to rank yet.")
             else:
-                max_rate = ranked_active["Attendance Rate"].max()
-                if lb_scope == "All Tied at Top %":
-                    lb_df = ranked_active[ranked_active["Attendance Rate"] == max_rate].copy()
-                elif lb_scope == "Top 15":
-                    lb_df = ranked_active.head(15).copy()
-                elif lb_scope == "Top 25":
-                    lb_df = ranked_active.head(25).copy()
+                if lb_mode == "Top Tier (Include All Ties)":
+                    top_rate = ranked_active["Attendance Rate"].max()
+                    top_lb = ranked_active[ranked_active["Attendance Rate"] == top_rate].copy()
                 else:
-                    lb_df = ranked_active.copy()
+                    top_lb = ranked_active.copy()
 
-                # Dense/competition-aware rank so ties at 100% share rank #1 cleanly
-                lb_df["Rank"] = lb_df["Attendance Rate"].rank(ascending=False, method="min").astype(int)
-                lb_df["Turnout"] = (lb_df["Active Count"] + lb_df["Zero Points Count"]).astype(str) + "/" + lb_df["Total Logged"].astype(str)
-                lb_df["Rate"] = lb_df["Attendance Rate"].astype(str) + "%"
-
-                st.caption(f"Showing {len(lb_df)} of {len(ranked_active)} active members (Top rate: {max_rate}%)")
+                top_lb.insert(0, "Rank", range(1, len(top_lb) + 1))
+                top_lb["Turnout"] = (top_lb["Active Count"] + top_lb["Zero Points Count"]).astype(str) + "/" + top_lb["Total Logged"].astype(str)
+                top_lb["Rate"] = top_lb["Attendance Rate"].astype(str) + "%"
                 st.dataframe(
-                    lb_df[["Rank", "Player Name", "Rate", "Turnout", "Active Count", "Zero Points Count"]].rename(
-                        columns={"Active Count": "Act", "Zero Points Count": "0-Pt"}
+                    top_lb[["Rank", "Player Name", "Rate", "Turnout", "Zero Points Count"]].rename(
+                        columns={"Zero Points Count": "0-Pt"}
                     ),
                     use_container_width=True,
                     hide_index=True,
-                    height=320
+                    height=380
                 )
 
         st.markdown("---")
@@ -1055,4 +1012,12 @@ elif page == "⚙️ Data Management":
             data=st.session_state.attendance_df.to_csv(index=False).encode("utf-8"),
             file_name="attendance_matrix.csv",
             mime="text/csv",
-            use_container_
+            use_container_width=True
+        )
+
+    with c2:
+        st.markdown("### Reset Data")
+        if st.button("🚨 Clear All Attendance Logs"):
+            st.session_state.attendance_df = pd.DataFrame(columns=["Session ID", "Event", "Date", "Player Name", "Status"])
+            save_attendance()
+            st.warning("All attendance records cleared!")
