@@ -273,11 +273,6 @@ def remove_member_from_session(session_id, player_name):
     return removed_count
 
 def migrate_attendance_names(rename_map):
-    """
-    Updates historical attendance records when players are renamed.
-    rename_map: dict of {old_name: new_name}
-    If both old_name and new_name exist in the same Session ID, keeps one record per session.
-    """
     att_df = st.session_state.attendance_df
     if att_df.empty or not rename_map:
         return 0
@@ -295,7 +290,6 @@ def migrate_attendance_names(rename_map):
             total_updated += count
 
     if total_updated > 0:
-        # Deduplicate if an old name was merged into an existing name in the same session
         updated_df["_norm_name"] = updated_df["Player Name"].str.strip().str.lower()
         updated_df = updated_df.drop_duplicates(subset=["Session ID", "_norm_name"], keep="last").drop(columns=["_norm_name"]).reset_index(drop=True)
         st.session_state.attendance_df = updated_df
@@ -425,21 +419,79 @@ if page == "📈 Analytics Dashboard":
         m4.metric("Zero-Point Instances", total_zero_pts, delta=f"-{total_zero_pts} inactive" if total_zero_pts > 0 else "Optimal", delta_color="inverse")
 
         st.markdown("---")
+        st.markdown("### 🎯 Minimum Attendance Threshold & Top Performers")
 
-        if total_sessions > 0 and not att_df.empty:
-            c_chart1, c_chart2 = st.columns(2)
-            with c_chart1:
-                st.markdown("#### 📉 Overall Status Breakdown")
-                status_counts = att_df["Status"].value_counts()
-                st.bar_chart(status_counts, color="#38bdf8")
+        f_col1, f_col2, f_col3 = st.columns([2, 1.5, 1.5])
+        min_threshold = f_col1.slider(
+            "Minimum Required Attendance (%)",
+            min_value=0,
+            max_value=100,
+            value=70,
+            step=5
+        )
+        roster_scope = f_col2.selectbox(
+            "Member Scope",
+            ["Active Only", "All Roster (Incl. Inactive)"]
+        )
+        threshold_view = f_col3.selectbox(
+            "Threshold View",
+            ["All in Scope", "Below Minimum Only", "Meeting Minimum Only"]
+        )
 
-            with c_chart2:
-                st.markdown("#### 🏆 Top Attendance Performers (Active Only)")
-                top_performers = active_summary_df.sort_values(by="Attendance Rate", ascending=False).head(10)
-                if not top_performers.empty:
-                    st.bar_chart(top_performers.set_index("Player Name")["Attendance Rate"], color="#818cf8")
-            st.markdown("---")
+        scoped_df = active_summary_df.copy() if roster_scope == "Active Only" else summary_df.copy()
+        scoped_df["Meets Target"] = scoped_df["Attendance Rate"] >= min_threshold
 
+        meets_count = int(scoped_df["Meets Target"].sum())
+        below_count = int((~scoped_df["Meets Target"]).sum())
+        total_scoped = len(scoped_df)
+
+        k1, k2, k3 = st.columns(3)
+        k1.metric(f"Meeting >= {min_threshold}%", f"{meets_count} / {total_scoped}")
+        k2.metric(f"Below {min_threshold}% Target", below_count)
+        pass_pct = (meets_count / total_scoped * 100) if total_scoped > 0 else 0.0
+        k3.metric("Compliance Rate", f"{pass_pct:.1f}%")
+
+        if threshold_view == "Below Minimum Only":
+            filtered_chart_df = scoped_df[~scoped_df["Meets Target"]].sort_values(by="Attendance Rate", ascending=True)
+        elif threshold_view == "Meeting Minimum Only":
+            filtered_chart_df = scoped_df[scoped_df["Meets Target"]].sort_values(by="Attendance Rate", ascending=False)
+        else:
+            filtered_chart_df = scoped_df.sort_values(by="Attendance Rate", ascending=False)
+
+        left_vis, right_vis = st.columns([3, 2])
+
+        with left_vis:
+            st.markdown(f"#### 📊 Attendance vs. {min_threshold}% Minimum")
+            if filtered_chart_df.empty:
+                st.info("No members match the selected threshold filter.")
+            else:
+                chart_plot_df = filtered_chart_df.set_index("Player Name")[["Attendance Rate"]].copy()
+                chart_plot_df["Target %"] = float(min_threshold)
+                st.line_chart(chart_plot_df, height=320)
+
+        with right_vis:
+            st.markdown("#### 🏆 Top Performers Leaderboard")
+            top_lb = active_summary_df.sort_values(
+                by=["Attendance Rate", "Active Count", "Total Logged"],
+                ascending=[False, False, False]
+            ).head(10).copy()
+
+            if top_lb.empty:
+                st.info("No active member data to rank yet.")
+            else:
+                top_lb.insert(0, "Rank", range(1, len(top_lb) + 1))
+                top_lb["Turnout"] = (top_lb["Active Count"] + top_lb["Zero Points Count"]).astype(str) + "/" + top_lb["Total Logged"].astype(str)
+                top_lb["Rate"] = top_lb["Attendance Rate"].astype(str) + "%"
+                st.dataframe(
+                    top_lb[["Rank", "Player Name", "Rate", "Turnout", "Zero Points Count"]].rename(
+                        columns={"Zero Points Count": "0-Pt"}
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=320
+                )
+
+        st.markdown("---")
         st.markdown("#### 📋 Complete Member Performance Matrix")
         display_df = summary_df.copy()
         display_df["Turnout"] = (display_df["Active Count"] + display_df["Zero Points Count"]).astype(str) + " / " + display_df["Total Logged"].astype(str)
@@ -565,7 +617,6 @@ elif page == "📝 Quick Log / Edit Sessions":
 
                 col_add_exp, col_rem_exp = st.columns(2)
 
-                # Add missing member to this existing session
                 with col_add_exp.expander("➕ Add Missing Member to This Session"):
                     all_roster_names = get_sorted_roster_names(active_only=False)
                     missing_from_session = [n for n in all_roster_names if n.strip().lower() not in session_players_lower]
@@ -625,7 +676,6 @@ elif page == "📝 Quick Log / Edit Sessions":
                                 else:
                                     st.error(msg_roster)
 
-                # Remove member from this existing session
                 with col_rem_exp.expander("🗑️ Remove Member from This Session"):
                     if not session_players:
                         st.info("No members in this session.")
@@ -743,7 +793,7 @@ elif page == "✏️ Edit Roster":
         if not all_known_names:
             st.info("No player records found yet.")
         else:
-            merge_tab, purge_tab = st.tabs(["Merge Old Name → Current Name", "Remove Name Completely"])
+            merge_tab, purge_tab = st.tabs(["Merge Old Name -> Current Name", "Remove Name Completely"])
 
             with merge_tab:
                 with st.form("merge_duplicate_history_form"):
@@ -832,7 +882,6 @@ elif page == "✏️ Edit Roster":
     st.markdown("---")
     if st.button("💾 Save All Roster Changes", type="primary", use_container_width=True):
         new_df = pd.DataFrame(edited_roster_data)
-        # Deduplicate roster rows if someone renamed a duplicate into an existing member name
         new_df["_norm"] = new_df["Player Name"].str.strip().str.lower()
         new_df = new_df.drop_duplicates(subset=["_norm"], keep="last").drop(columns=["_norm"]).reset_index(drop=True)
 
